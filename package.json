@@ -1,0 +1,44 @@
+{
+  "name": "blyg-atlas",
+  "version": "0.1.0",
+  "description": "Reader-side atlas of the blygger network: crawl, typed citation graph, activation search, pulse, standing queries, and the Field.",
+  "license": "MIT",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Allethrin/blyg-atlas.git"
+  },
+  "bin": {
+    "blyg-atlas": "bin/blyg-atlas"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "crawl": "tsx src/cli.ts crawl",
+    "serve": "tsx src/serve.ts",
+    "mcp": "tsx src/mcp.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "better-sqlite3": "^12.11.1",
+    "express": "^5.2.1",
+    "marked": "^16.3.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "umap-js": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "onnxruntime-node@1.30.0": true,
+    "protobufjs@7.6.6": true,
+    "better-sqlite3@12.11.1": true,
+    "fsevents@2.3.3": true
+  }
+}

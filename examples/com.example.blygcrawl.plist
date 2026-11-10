@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- macOS launchd: crawl every morning, then run the standing queries so the digest is ready before you look.
+     Replace /PATH/TO/blyg-atlas and the PATH entry for your node install, then:
+       cp examples/com.example.blygcrawl.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.example.blygcrawl.plist
+     A laptop asleep at 06:45 runs this the moment it next wakes, often a few-second background wake with no network.
+     `--wait 3600` keeps the crawl retrying (up to 240 tries, 15 s apart, not counting time asleep) until a seed answers,
+     which in practice is when the lid is next opened. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.example.blygcrawl</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>date; npx tsx src/cli.ts crawl --wait 3600 &amp;&amp; npx tsx src/cli.ts query run --all</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/PATH/TO/blyg-atlas</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>45</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/PATH/TO/blyg-atlas/crawl.log</string>
+  <key>StandardErrorPath</key>
+  <string>/PATH/TO/blyg-atlas/crawl.log</string>
+</dict>
+</plist>

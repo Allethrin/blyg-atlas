@@ -1,0 +1,249 @@
+/* Field styles — loaded by index.html.
+   Uses the page's tokens: --bg --fg --mute --line --accent --soft --read. */
+/* field — the thicket as a plane */
+main.wide { max-width: none; padding: 12px 16px 40px; }
+.fbar { display:flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--mute); margin-bottom: 8px; }
+/* what the search has lit: a chip in the bar, floating in full screen; `/` in full screen opens .ffind over the map */
+.fqchip { display: inline-flex; gap: 7px; align-items: baseline; padding: 3px 11px; border: 1px solid var(--accent); border-radius: 14px; color: var(--fg); }
+.fqchip[hidden], .fqfloat { display: none; }
+body.ffull .fqfloat:not([hidden]) { display: inline-flex; position: fixed; top: 10px; left: 12px; z-index: 7; font-size: 12.5px; background: var(--dock-bg); }
+.ffind { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 8; }
+.ffind[hidden] { display: none; }
+.ffind input { font: inherit; font-size: 15px; width: min(460px, 70vw); padding: 8px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--bg); color: var(--fg); outline: none; box-shadow: 0 4px 18px rgba(0,0,0,.18); }
+.fctl label { white-space: nowrap; }
+.fctl label { margin-right: 8px; cursor: pointer; }
+.fctl a { color: var(--mute); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; margin-right: 3px; }
+.fctl a.on { color: var(--fg); border-color: var(--mute); }
+.fctl a:hover { text-decoration: none; color: var(--fg); }
+.fstat { margin-left: auto; }
+.fwrap { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 14px; }
+@media (max-width: 900px) { .fwrap { grid-template-columns: 1fr; } }
+.fsvgwrap { position: relative; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow: hidden; align-self: start; }
+#fsvg { display: block; width: 100%; height: auto; position: relative; touch-action: none; }   /* labels, over the canvas */
+#fcanvas { position: absolute; left: 0; top: 0; width: 100%; height: auto; pointer-events: none; }   /* regions, citations, heat, points */
+@keyframes fdash { to { stroke-dashoffset: -20; } }
+.flabel { cursor: pointer; }
+.flabel text { fill: var(--fg); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+.flabel.top .fname { font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+.flabel.top .frep { font-size: 11.5px; fill: var(--mute); }
+.flabel.sub .fname { font-size: 12px; font-weight: 600; }
+.flabel.sub .frep { font-size: 10.5px; fill: var(--mute); }
+.flabel:hover text.fname { fill: var(--accent); }
+.flabel text.frep { pointer-events: none; }
+.ftip { position: absolute; max-width: 330px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13.5px; line-height: 1.4; pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.12); z-index: 3; }
+.ftip .read { color: var(--read); } .ftip .accent, .fside .accent { color: var(--accent); }
+.fside { font-size: 13.5px; max-height: 900px; overflow: auto; }
+.fside h2 { margin: 10px 0 6px; }
+.fscene, .fregion { padding: 5px 0; border-bottom: 1px solid var(--line); position: relative; }
+.fregion a { font-weight: 600; }
+.fregion .frep2 { font-size: 12px; }
+.fbar2 { display:block; height: 3px; background: var(--accent); opacity: .5; border-radius: 2px; margin-top: 3px; }
+.forigin { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; color: var(--fg); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px 2px 6px; margin: 2px 3px 2px 0; cursor: pointer; }
+.forigin i { width: 10px; height: 10px; border-radius: 50%; display:inline-block; }
+.forigin.off { opacity: .4; text-decoration: line-through; }
+.flegend { margin-top: 6px; }
+.fregion.here a { color: var(--fg); }
+/* field — blobs: the region tree as circles you drill into */
+.bcrumb { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0; font-size: 14px; margin: 0 0 8px; min-height: 1.5em; }
+.bcrumb .sep { color: var(--mute); margin: 0 7px; }
+.bcrumb .cur { font-weight: 600; }
+.bcrumb .bsum { margin-left: auto; font-size: 12.5px; color: var(--mute); }
+.fblobs { font-family: Georgia, "Iowan Old Style", serif; }
+.bnode { cursor: pointer; outline: none; }
+.bbody { fill: var(--soft); stroke: var(--mute); stroke-opacity: .4; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.bnode:hover .bbody, .bnode:focus-visible .bbody { stroke: var(--fg); stroke-opacity: .85; stroke-width: 1.6; }
+.btint { fill: var(--accent); pointer-events: none; }
+.bhalo { pointer-events: none; }
+.brim { pointer-events: none; opacity: .8; }
+.bhitring { fill: none; stroke: var(--accent); pointer-events: none; }
+.bprev { pointer-events: none; }
+.bprev circle { fill: var(--bg); fill-opacity: .55; stroke: var(--mute); stroke-opacity: .32; stroke-width: .8; vector-effect: non-scaling-stroke; }
+.bprev circle.dot { stroke: none; fill-opacity: .5; }
+.blab { pointer-events: none; }
+.blab tspan { fill: var(--fg); paint-order: stroke; stroke: var(--soft); stroke-width: 3.5px; stroke-linejoin: round; }
+.blab .bn { font-weight: 700; letter-spacing: .01em; }
+.blab .bc { fill: var(--mute); font-family: ui-monospace, Menlo, monospace; }
+.blab .br { fill: var(--mute); font-style: italic; }
+.brib { fill: none; stroke: var(--mute); stroke-linecap: round; transition: opacity .18s; }
+.brib.tr { stroke: var(--accent); }
+.brib.arrow .rh { fill: var(--mute); stroke: none; }
+.brib.arrow.tr .rh { fill: var(--accent); }
+.brib.quiet { opacity: 0; }
+.bribs.hov .brib { opacity: .05 !important; }
+.bribs.hov .brib.on { opacity: .7 !important; }
+.bribl text { font: 11px ui-monospace, Menlo, monospace; fill: var(--mute); text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; transition: opacity .18s; }
+.bribl text.quiet, .bribl.hov text { opacity: 0; }
+.bribl.hov text.on { opacity: 1; fill: var(--fg); }
+.bstub { fill: none; stroke: var(--mute); stroke-dasharray: 1 4; stroke-linecap: round; opacity: .6; }
+.bstubl { font: 10.5px ui-monospace, Menlo, monospace; fill: var(--mute); text-anchor: middle; opacity: .8; pointer-events: none; }
+.bcont { fill: var(--soft); fill-opacity: .6; stroke: var(--mute); stroke-opacity: .35; vector-effect: non-scaling-stroke; pointer-events: none; }
+.bline { fill: none; stroke: var(--mute); stroke-opacity: .5; stroke-width: 1.1; pointer-events: none; }
+.bline.tr { stroke: var(--accent); stroke-opacity: .55; }
+.blines.dim .bline { stroke-opacity: .25; }
+.blines.hov .bline { stroke-opacity: .08; }
+.blines.hov .bline.on { stroke-opacity: .95; stroke-width: 1.8; }
+.bglows circle { pointer-events: none; }
+.bdot { stroke: var(--bg); stroke-width: .8; cursor: pointer; }
+.bdot.read { stroke: var(--read); stroke-width: 1.7; }
+.bdot.hit { stroke: var(--accent); stroke-width: 2.2; }
+.bdot.hov { stroke: var(--accent); stroke-width: 2.2; }
+.bempty { fill: var(--mute); font-style: italic; font-size: 14px; }
+.ftour { font-size: 13px; color: var(--mute); margin: 0 0 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); }
+.ftour .trow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.ftour .trow + .trow { margin-top: 5px; min-height: 1.3em; }
+.ftour .tsl { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ftour .tsl input[type=range] { width: 108px; accent-color: var(--accent); }
+.ftour .tsl output { font: 11.5px ui-monospace, Menlo, monospace; color: var(--fg); min-width: 4.2em; }
+.ftour .tsl.off { opacity: .4; }
+.ftour .thold { font-size: 11px; color: var(--mute); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; line-height: 1.5; }
+.ftour .thold:hover { color: var(--fg); text-decoration: none; }
+.ftour .thold.on { color: var(--accent); border-color: var(--accent); }
+.ftour .tlens b { color: var(--fg); font-weight: 600; }
+.ftour .tlens a, .ftour .tview a[data-unview] { color: var(--mute); margin-left: 3px; }
+.ftour .tview { margin-right: 10px; }
+.ftour .tview a:first-child { color: var(--fg); }
+.ftour .tstat { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+/* tour — time */
+.ftour .ttime .twhen .ttrack { position: relative; display: inline-block; padding-bottom: 13px; }
+.ftour .ttime .twhen input[type=range] { width: 300px; }
+.ftour .tticks { position: absolute; left: 7px; right: 7px; bottom: 0; height: 12px; pointer-events: none; }
+.ftour .tticks i { position: absolute; transform: translateX(-50%); font: 9.5px ui-monospace, Menlo, monospace; font-style: normal; color: var(--mute); white-space: nowrap; }
+.ftour .tticks i::before { content: ''; position: absolute; left: 50%; top: -4px; height: 4px; border-left: 1px solid var(--mute); opacity: .6; }
+.ftour .twhen.off .tticks { opacity: .5; }
+.ftour .tdate { font: 12px ui-monospace, Menlo, monospace; color: var(--fg); }
+/* tour — meaning + time: the time axis's gridlines and the span line on a label */
+.btaxis { pointer-events: none; }
+.btaxis line { stroke: var(--mute); stroke-opacity: .16; stroke-dasharray: 2 5; vector-effect: non-scaling-stroke; }
+.btaxis line.yr { stroke-opacity: .3; stroke-dasharray: none; }
+.btaxis text { font: 10.5px ui-monospace, Menlo, monospace; fill: var(--mute); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
+.blab .bt { fill: var(--accent); font-family: ui-monospace, Menlo, monospace; }
+/* tour — poles: what each direction of the plane means, at the edges */
+.bpoles { pointer-events: none; }
+.bpoles text { font: 13px ui-monospace, Menlo, monospace; fill: var(--mute); letter-spacing: .02em; paint-order: stroke; stroke: var(--bg); stroke-width: 3.5px; stroke-linejoin: round; }
+.bpoles text.time { fill: var(--accent); }
+/* tour — the loupe at the bottom level */
+.bloupe { fill: var(--bg); fill-opacity: .25; stroke: var(--accent); stroke-opacity: .55; stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.bloupe.gap { fill: none; stroke-opacity: .35; stroke-dasharray: 3 4; }
+.bbubs { pointer-events: none; }
+.bldots .ldot { stroke: var(--bg); stroke-width: .7; cursor: pointer; vector-effect: non-scaling-stroke; }
+.bub line { stroke-width: 1; stroke-opacity: .7; vector-effect: non-scaling-stroke; }
+.bub .bubc { pointer-events: auto; cursor: pointer; }
+.bub circle { fill: var(--bg); stroke-width: 1.6; filter: drop-shadow(0 2px 6px rgba(0,0,0,.14)); }
+.bub.first circle { stroke-width: 2.4; }
+.bubt { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-align: center; overflow: hidden; font: 11px/1.25 Georgia, "Iowan Old Style", serif; color: var(--fg); box-sizing: border-box; }
+.bubt > * { flex: 0 0 auto; }
+.bubt b { font-weight: 700; font-size: 12.5px; line-height: 15px; max-height: 45px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.bubt span { color: var(--fg); opacity: .8; font-size: 11px; line-height: 13.5px; max-height: 67.5px; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.bubt span.own { opacity: 1; font-size: 11.5px; line-height: 14px; -webkit-line-clamp: 8; max-height: 112px; }
+.bubt i { color: var(--mute); font-size: 9.5px; font-family: ui-monospace, Menlo, monospace; font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.bdot, .bline { vector-effect: non-scaling-stroke; }
+.bline { stroke-linejoin: round; stroke-linecap: round; }
+/* an item revised by hand: a thin ring at rest; its history (line + a tick per version) while hovered or open */
+.brings circle { fill: none; stroke: currentColor; stroke-width: 1; stroke-opacity: .75; vector-effect: non-scaling-stroke; pointer-events: none; }
+.bvers path { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-opacity: .8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.bvers circle.vtick { fill: var(--bg); stroke: currentColor; stroke-width: 1.4; vector-effect: non-scaling-stroke; pointer-events: none; }
+.bvers circle.vhit { fill: transparent; stroke: none; cursor: pointer; }
+.bvers text.vlabel { font: 11px ui-monospace, Menlo, monospace; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+.bvers text.vlabel .vln { fill: var(--fg); }
+/* tour — full screen: the page’s chrome hidden; the controls dock below */
+body.ffull header { display: none; }
+body.ffull main.wide { padding: 0; }
+body.ffull .fbar, body.ffull .fside, body.ffull .flegend { display: none; }
+body.ffull .fwrap { display: block; }
+body.ffull .fsvgwrap { border: 0; border-radius: 0; }
+/* full screen: the controls are a slim dock along the bottom edge and the field is laid out above it (dockH in
+   field.js), so nothing covers the circles or the poles; the breadcrumb is a line just above the dock */
+body.ffull { --dock-bg: color-mix(in srgb, var(--soft) 94%, transparent); }
+body.ffull .ftour { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; max-width: none; margin: 0; padding: 5px 200px 5px 14px; border: 0; border-top: 1px solid var(--line); border-radius: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 14px; font-size: 11.5px; background: var(--dock-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+body.ffull .ftour .trow { display: contents; }
+body.ffull .ftour .tstat, body.ffull .ftour a[data-tact="full"] { display: none; }
+body.ffull .ftour .fctl a { padding: 1px 6px; margin-right: 2px; font-size: 11px; }
+body.ffull .ftour .tsl { gap: 4px; }
+body.ffull .ftour .tsl input[type=range] { width: 70px; }
+body.ffull .ftour .ttime .twhen input[type=range] { width: 300px; }   /* the ticks are spaced for 300 */
+body.ffull .ftour .ttime .twhen .ttrack { padding-bottom: 11px; }
+body.ffull .ftour .tsl output { min-width: 3.2em; font-size: 10.5px; }
+body.ffull .ftour .thold { font-size: 10px; padding: 0 4px; }
+body.ffull .ftour .tdate { font-size: 11px; }
+body.ffull .bcrumb { position: fixed; left: 0; right: 0; bottom: var(--dockh, 0px); z-index: 6; margin: 0; padding: 3px 14px; font-size: 12.5px; background: var(--dock-bg); border-top: 1px solid var(--line); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+body.ffull .bcrumb .bsum { font-size: 11.5px; }
+body.ffull.fbare .ftour, body.ffull.fbare .bcrumb { display: none; }
+.ffab { display: none; }
+body.ffull .ffab { display: flex; gap: 5px; position: fixed; right: 10px; bottom: 6px; z-index: 7; }
+body.ffull:not(.fbare) .ffab [data-fab="drift"] { display: none; }
+.ffab button { font: 11px Georgia, serif; color: var(--mute); background: var(--dock-bg, var(--soft)); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.ffab button:hover { color: var(--fg); border-color: var(--mute); }
+.ffab button kbd { font: inherit; color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; margin-right: 2px; }
+.ffab button.on { color: var(--fg); border-color: var(--mute); }
+
+/* flow — a term moving between blyggers (flow.js) */
+.flowgrid { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: start; }
+@media (max-width: 760px) { .flowgrid { grid-template-columns: 1fr; } .flowlist { max-height: 220px; } }
+.flowlist { list-style: none; margin: 0; padding: 0; max-height: calc(100vh - 150px); overflow: auto; font-size: 14px; border-right: 1px solid var(--line); }
+.flowlist li { padding: 3px 8px 3px 0; }
+.flowlist li.on a { color: var(--fg); font-weight: 600; }
+.flowmain { position: relative; min-width: 0; }
+.flowtitle { text-transform: none; letter-spacing: 0; font-size: 20px; color: var(--fg); margin: 0 0 6px; }
+.flowtitle .muted { font-size: 14px; font-weight: 400; }
+.flowlegend { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--mute); margin-bottom: 6px; align-items: center; }
+.flowlegend svg { vertical-align: middle; }
+.flowchart { position: relative; overflow-x: auto; }
+
+/* the reader drawer (Nov 6): an item opens over the right edge of the field, the map stays live behind it */
+.freader { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 42vw); z-index: 20; display: flex; flex-direction: column;
+  background: color-mix(in srgb, var(--bg) 96%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(0,0,0,.10); }
+.freader[hidden] { display: none; }
+.frhead { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.frhead .frwhere { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frhead a { color: var(--mute); text-decoration: none; }
+.frhead a:hover { color: var(--accent); }
+.frhead .frx { font-size: 20px; line-height: 1; }
+.frhead .frback { font-size: 16px; }
+.frscroll { flex: 1; overflow-y: auto; padding: 4px 20px 40px; }
+.frtitle { font-size: 19px; margin: 12px 0 4px; line-height: 1.3; text-transform: none; letter-spacing: normal; color: var(--fg); }
+.frtext { font-size: 14.5px; line-height: 1.55; margin-top: 12px; }
+.frtext img { max-width: 100%; height: auto; }
+.frtext pre { white-space: pre-wrap; font-family: inherit; }
+/* the reader's history: folded; a row per version, newest first */
+.frhist { margin-top: 8px; color: var(--mute); }
+.frhist summary { cursor: pointer; }
+.frhist[open] { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.frh { display: grid; grid-template-columns: 3.4em 6.6em 1fr; gap: 8px; margin: 5px 0 0; line-height: 1.4; }
+.frh .frhv { font-variant-numeric: tabular-nums; }
+.frh .frhn { color: var(--fg); }
+.frh.bulk .frhn { color: var(--mute); }
+.frhfoot { margin-top: 8px; }
+.fredges { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 10px; }
+.fredges b { display: block; color: var(--mute); font-weight: 600; margin-bottom: 3px; }
+.fredges div > div { margin: 2px 0; }
+#fsvg .bdot.fopen { stroke: var(--fg); stroke-width: 2.4px; paint-order: stroke; }
+@media (max-width: 700px) { .freader { width: 100vw; } }
+
+/* cards: readers popped out of the drawer — drag by the bar, resize from the corner, fold to a tab */
+#fcards { position: fixed; inset: 0; pointer-events: none; z-index: 19; }
+#fcards[hidden] { display: none; }
+.fcard { position: fixed; pointer-events: auto; display: flex; flex-direction: column; min-width: 200px; min-height: 120px; resize: both; overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 95%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 26px rgba(0,0,0,.16); }
+.fcard.dragging { box-shadow: 0 14px 36px rgba(0,0,0,.24); opacity: .92; }
+.fchead { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; touch-action: none; font-size: 12.5px; background: var(--soft); }
+.fcard.dragging .fchead { cursor: grabbing; }
+.fctitle { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--fg); }
+.fchead a { color: var(--mute); text-decoration: none; padding: 0 2px; }
+.fchead a:hover { color: var(--accent); }
+.fchead .fcx { font-size: 16px; line-height: 1; }
+.fcard .frscroll { padding: 2px 14px 20px; }
+.fcard .frtitle { font-size: 15.5px; margin-top: 8px; }
+.fcard .frtext { font-size: 13.5px; line-height: 1.5; }
+.fcard.min { height: auto !important; width: 230px !important; min-height: 0; resize: none; border-radius: 16px; }
+.fcard.min .frscroll { display: none; }
+.fcard.min .fchead { border-bottom: 0; border-radius: 16px; }
+.fcard.min .fcback, .fcard.min .fcfull { display: none; }
+.frhead .frpop { white-space: nowrap; }
+#fsvg .bdot.fhov { stroke: var(--accent); stroke-width: 3.2px; paint-order: stroke; }
+
+/* the Field with nothing on it (first run): what is missing and the command for it */
+.fempty { max-width: 46rem; margin: 3rem auto; line-height: 1.5; }
+.fempty h2 { margin: 0 0 .75rem; }
+.fempty-cmd { padding: .6rem .8rem; border: 1px solid rgba(128, 128, 128, .35); border-radius: 6px; overflow-x: auto; font-size: .92em; }

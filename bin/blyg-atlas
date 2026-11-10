@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+// Runs src/cli.ts under tsx. `blyg-atlas crawl | serve | mcp | search … | pulse | query …` — see src/cli.ts for the list.
+const path = require('path');
+const { spawnSync } = require('child_process');
+const r = spawnSync(process.execPath, [require.resolve('tsx/cli'), path.join(__dirname, '..', 'src', 'cli.ts'), ...process.argv.slice(2)], { stdio: 'inherit' });
+process.exit(r.status ?? 1);

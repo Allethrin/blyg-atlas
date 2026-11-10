@@ -1,0 +1,9 @@
+{
+  "_note": "Optional. Copy to atlas.config.json (gitignored). Every field has a default and most have an environment-variable override — see src/config.ts. `field` is what the Field offers: the defaults shown are the one-view setup (the tour through meaning + time, time fixed left to right); add \"blobs\" / \"plane\" to modes or \"m4\" / \"ar\" to spaces to get the other presentations back.",
+  "contact": "https://github.com/you/your-fork — or an email; this goes in the crawler's User-Agent so a site you crawl can reach you",
+  "own_origin": "https://example.com/blyg/   — your own blyg, if you publish one; your items stay out of pulse and standing queries",
+  "publisher": "../my-blyg/publish.ts   — a script offering `reply <ref> <text> [--quote …] [--dry-run | --yes --no-mention]` and `mention <id> --wait`; enables casual replies from the dashboard",
+  "embedder": "auto   — how nomic-embed-text runs: \"ollama\", \"local\" (in this process, no Ollama needed), or \"auto\" (Ollama when it is running, in-process otherwise). Both give the same vectors.",
+  "port": 5053,
+  "field": { "modes": ["tour"], "spaces": ["mt"], "time_fixed": true }
+}

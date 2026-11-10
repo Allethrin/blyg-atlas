@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blyg Atlas</title>
+<style>
+  :root { --bg:#fbfaf7; --fg:#1d1c1a; --mute:#6f6a62; --line:#e4dfd6; --accent:#8a4b2a; --soft:#f1ede6; --read:#3f7a4a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161513; --fg:#e8e3da; --mute:#9a938a; --line:#2d2a26; --accent:#d9956d; --soft:#201e1b; --read:#8fcf9a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 16px/1.55 Georgia, "Iowan Old Style", serif; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  header { position: sticky; top:0; background:var(--bg); border-bottom:1px solid var(--line); padding: 12px 16px; z-index:2; }
+  .bar { max-width: 860px; margin: 0 auto; display:flex; gap:10px; align-items:center; }
+  .bar input { flex:1; font: inherit; font-size: 17px; padding: 9px 12px; border:1px solid var(--line); border-radius: 8px; background: var(--soft); color: var(--fg); outline: none; }
+  .bar input:focus { border-color: var(--accent); }
+  .bar button, .nav a { font: inherit; font-size: 13px; color: var(--mute); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; cursor: pointer; }
+  .bar button:hover, .nav a:hover { color: var(--fg); text-decoration: none; border-color: var(--mute); }
+  .nav { display:flex; gap:6px; }
+  main { max-width: 860px; margin: 0 auto; padding: 18px 16px 80px; }
+  .hit, .card { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .hit h3, .card h3 { margin: 0 0 2px; font-size: 17px; font-weight: 600; line-height: 1.3; }
+  .meta { font-size: 12.5px; color: var(--mute); }
+  .meta .read { color: var(--read); }
+  .path { font-size: 12px; color: var(--mute); font-family: ui-monospace, Menlo, monospace; margin-top: 3px; word-break: break-all; }
+  .excerpt { font-size: 14.5px; color: var(--fg); opacity: .85; margin-top: 4px; }
+  .score { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--mute); }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--mute); font-weight: 600; margin: 26px 0 6px; }
+  article .body { font-size: 17px; }
+  article .body img { max-width: 100%; height: auto; }
+  article .body blockquote { border-left: 3px solid var(--line); margin: 14px 0; padding: 2px 14px; color: var(--fg); opacity: .9; }
+  article .body blockquote.blyg-transclusion { border-left-color: var(--accent); background: var(--soft); border-radius: 0 6px 6px 0; padding: 8px 14px; }
+  .tq { font-size: 12px; color: var(--mute); margin: 0 0 4px; font-family: ui-monospace, Menlo, monospace; }
+  article .body pre { white-space: pre-wrap; font-size: 14px; }
+  .title { font-size: 26px; line-height: 1.2; margin: 0 0 6px; font-weight: 700; }
+  .edges { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+  @media (max-width: 640px) { .edges { grid-template-columns: 1fr; } }
+  .edge { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+  .edge .k { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--mute); margin-right: 6px; }
+  .pill { display:inline-block; font-size: 11.5px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--mute); margin-left: 6px; }
+  .pill.stale { border-color: var(--accent); color: var(--accent); }
+  .muted { color: var(--mute); }
+  .small { font-size: 13px; }
+  table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  td, th { text-align: left; padding: 5px 8px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--mute); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  td.n, th.n { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .spinner { color: var(--mute); font-style: italic; }
+  .thread { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .thread h3 { margin: 0 0 2px; font-size: 17px; font-weight: 600; line-height: 1.3; }
+  .ev { font-size: 14px; padding: 3px 0 3px 12px; border-left: 2px solid var(--line); margin: 4px 0; }
+  .ev .k { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--mute); margin-right: 6px; }
+  .ev.changed { border-left-color: var(--accent); }
+  .ev .note { color: var(--mute); font-style: italic; }
+  .range a, .range button { font: inherit; font-size: 12.5px; color: var(--mute); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; margin-right: 4px; background: none; cursor: pointer; }
+  .range a.on { color: var(--fg); border-color: var(--mute); }
+  .err { color: #b3261e; }
+  .act { font: inherit; font-size: 12px; color: var(--mute); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; cursor: pointer; margin-right: 4px; }
+  .act:hover { color: var(--fg); border-color: var(--mute); }
+  .act.on { color: var(--accent); border-color: var(--accent); }
+  .acts { margin-top: 5px; }
+  .pill.new { border-color: var(--accent); color: var(--accent); }
+  .pill.kept { border-color: var(--read); color: var(--read); }
+  .qrow { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .qrow h3 { margin: 0 0 2px; font-size: 17px; font-weight: 600; line-height: 1.3; }
+  .qhead .title { font-size: 22px; }
+  .reply textarea, .reply select { font: inherit; font-size: 14.5px; width: 100%; background: var(--soft); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 4px 0; }
+  .reply textarea.quote { font-style: italic; font-size: 13.5px; }
+  .reply pre { white-space: pre-wrap; font-size: 12.5px; background: var(--soft); border-radius: 6px; padding: 8px; max-height: 340px; overflow: auto; }
+  .keepbar { margin: 10px 0; font-size: 13px; color: var(--mute); }
+  .keepbar select { font: inherit; font-size: 13px; background: var(--soft); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  details summary { cursor: pointer; color: var(--mute); font-size: 14px; margin: 18px 0 6px; }
+</style>
+<link rel="stylesheet" href="field.css">
+</head>
+<body>
+<header>
+  <div class="bar">
+    <a href="#/" title="home" style="font-weight:700;color:var(--fg)">atlas</a>
+    <input id="q" type="search" placeholder="search the network — semantic seeds, then follow the quotes" autocomplete="off">
+    <div class="nav">
+      <a href="#/field">field</a><a href="#/queries">queries</a><a href="#/pulse">pulse</a><a href="#/recent">recent</a><a href="#/history">history</a><a href="#/map">map</a>
+    </div>
+  </div>
+</header>
+<main id="main"></main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+// ---------------------------------------------------------------- state
+const $ = (s, el = document) => el.querySelector(s);
+const main = $('#main'), q = $('#q');
+const api = async (path, opts) => { const r = await fetch('/api' + path, opts); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j; };
+const post = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const short = o => String(o || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+const fmtDate = s => s ? new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+const fmtWhen = s => s ? new Date(s).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+// Render generation: route() bumps it; async views capture it and drop their writes if the view changed under them.
+let viewGen = 0;
+const stale = g => g !== viewGen;
+const ms = n => !n ? '' : n < 60000 ? Math.round(n / 1000) + 's' : Math.round(n / 60000) + 'm';
+
+// Read history: opening an item records a read; how long it stayed open is sent when the reader moves on.
+// Local, never published.
+const RD = { id: null, enteredAt: 0 };
+async function markRead(it) {
+  flushDwell();
+  try { const r = await post('/read', { origin: it.origin, id: it.id, version: it.version }); RD.id = r.read_id; RD.enteredAt = Date.now(); } catch {}
+}
+function flushDwell() {
+  if (RD.id && RD.enteredAt) {
+    const dwell = Date.now() - RD.enteredAt;
+    if (dwell > 1500) navigator.sendBeacon(`/api/read/${RD.id}/dwell`, new Blob([JSON.stringify({ dwell_ms: dwell })], { type: 'application/json' }));
+  }
+  RD.id = null; RD.enteredAt = 0;
+}
+addEventListener('pagehide', flushDwell);
+
+// ---------------------------------------------------------------- views
+const itemHash = (origin, id) => `#/item/${encodeURIComponent(origin)}/${id}`;
+const readMark = h => h.reads ? `<span class="read" title="opened ${h.reads}×">· read ${fmtDate(h.read_at)}</span>` : '';
+function hitHtml(h) {
+  return `<div class="hit">
+    <h3><a href="${itemHash(h.origin, h.id)}">${esc(h.title || '(untitled)')}</a></h3>
+    <div class="meta">${esc(h.author || short(h.origin))} · ${esc(short(h.origin))} · v${h.version} · ${fmtDate(h.updated)} ${readMark(h)}
+      ${h.rerank_score !== undefined ? `<span class="score"> · rerank ${h.rerank_score.toFixed(2)}</span>` : ''}${h.hops ? `<span class="pill">${h.hops} hop</span>` : ''}</div>
+    ${h.path ? `<div class="path">${esc(h.path.join(' '))}</div>` : ''}
+    <div class="excerpt">${esc((h.excerpt || '').slice(0, 260))}</div>
+  </div>`;
+}
+
+async function viewSearch(query) {
+  q.value = query;
+  main.innerHTML = `<p class="spinner">searching, then walking the quotes…</p>`;
+  const g = viewGen;
+  try {
+    const r = await api(`/search?q=${encodeURIComponent(query)}`);
+    if (stale(g)) return;
+    main.innerHTML = `<div class="meta">${r.hits.length} of ${r.pooled} pooled · ${r.seeds} semantic seeds · ${r.embedded_items} items embedded · ${r.rerank_model ? 'reranked locally' : 'activation order'}
+      ${r.hits.length ? `<button class="act" id="savequery" title="run this against what moves from now on">save as standing query</button>` : ''}</div>` +
+      (r.hits.length ? r.hits.map(h => hitHtml(h)).join('') : '<p class="muted">nothing in the pool. The network may just not speak to this.</p>');
+    const save = $('#savequery');
+    if (save) save.onclick = async () => {
+      save.disabled = true; save.textContent = 'declaring, then running against what moved…';
+      try { const r = await post('/queries', { text: query }); location.hash = `#/query/${r.query.id}`; }
+      catch (e) { save.textContent = e.message; }
+    };
+  } catch (e) { if (!stale(g)) main.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
+
+// An item's body: studio-rendered HTML with relative media made absolute; transclusion blockquotes become internal
+// links. Shared by the item page and the field's reader drawer.
+function fillItemBody(body, it) {
+  if (it.content_html) {
+    body.innerHTML = it.content_html;
+    body.querySelectorAll('img[src]').forEach(img => { try { img.src = new URL(img.getAttribute('src').replace(/^\/blyg\//, ''), it.origin).toString(); } catch {} });
+    body.querySelectorAll('a[href]').forEach(a => {
+      const m = a.getAttribute('href').match(/^(https?:\/\/[^#?]*?)\/?(?:f|t)\/([0-9a-z]{26})\/?$/);
+      if (m && knownOrigin(m[1] + '/')) { a.setAttribute('href', itemHash(knownOrigin(m[1] + '/'), m[2])); a.dataset.via = 'link'; }
+      else { a.target = '_blank'; a.rel = 'noopener'; }
+    });
+    body.querySelectorAll('blockquote.blyg-transclusion').forEach(bq => {
+      const tid = bq.dataset.blygId, torigin = bq.dataset.blygOrigin || it.origin;
+      const e = it.edges.out.find(x => x.type === 'transclusion' && x.target && x.target.endsWith(' ' + tid));
+      const head = document.createElement('div'); head.className = 'tq';
+      head.innerHTML = e && e.crawled ? `quoted from <a href="${itemHash(originOf(e.url), tid)}">${esc(e.cited_author || short(torigin))}</a> · v${bq.dataset.blygVersion || ''}${e.stale ? ' · <span class="pill stale">stale</span>' : ''}` : `quoted from ${esc(short(torigin))} · v${bq.dataset.blygVersion || ''} <span class="pill">not crawled</span>`;
+      bq.prepend(head);
+    });
+  } else body.innerHTML = `<pre>${esc(it.content_text || '')}</pre>`;
+}
+async function viewItem(origin, id) {
+  main.innerHTML = `<p class="spinner">loading…</p>`;
+  let it;
+  const g = viewGen;
+  try { it = await api(`/item?origin=${encodeURIComponent(origin)}&id=${id}`); } catch (e) { if (!stale(g)) main.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  if (stale(g)) return;
+  markRead(it);
+  document.title = `${it.title || it.id} — atlas`;
+  const edge = (e, dir) => {
+    const internal = e.crawled !== false && e.target ? itemHash(e.target.split(' ')[0].startsWith('http') ? e.target.split(' ')[0] : originFromShort(e.target.split(' ')[0]), e.target.split(' ')[1]) : null;
+    return `<div class="edge"><span class="k">${esc(e.type)}</span>${
+      dir === 'out'
+        ? (e.crawled ? `<a href="${itemHash(originOf(e.url), e.target.split(' ')[1])}">${esc(e.target_title || e.target)}</a>` : `<a href="${esc(e.url || '#')}" target="_blank" rel="noopener">${esc(e.target_title || e.target || e.url)}</a> <span class="pill">not crawled</span>`)
+        : `<a href="${itemHash(originFromShort(e.source.split(' ')[0]), e.source.split(' ')[1])}">${esc(e.source_title || e.source)}</a> <span class="muted small">${esc(e.author || '')}${e.passages ? ` · ${e.passages} passages` : ''}</span>`
+    }${e.stale ? `<span class="pill stale" title="pinned v${e.pinned_version}, now v${e.target_current_version}">stale quote</span>` : ''}${dir === 'out' && e.passages > 1 ? `<span class="pill">${e.passages} passages</span>` : ''}${e.selector ? `<div class="small muted">“${esc(e.selector.slice(0, 140))}${e.selector.length > 140 ? '…' : ''}”</div>` : ''}</div>`;
+  };
+  const reads = it.reads.length ? `<div class="meta">you: ${it.reads.length}× · last ${fmtWhen(it.reads[0].at)}</div>` : '';
+  main.innerHTML = `<article>
+    <div class="meta">${esc(short(it.origin))} · ${esc(it.origin_title || '')} · <a href="${esc(it.url)}" target="_blank" rel="noopener">open live ↗</a></div>
+    <h1 class="title">${esc(it.title || '(untitled)')}</h1>
+    <div class="meta">${esc(it.author || '')} · ${esc(it.kind || '')} · v${it.version} · ${fmtDate(it.created)}${it.updated !== it.created ? ' → ' + fmtDate(it.updated) : ''}${it.has_generated ? ' · <span title="changelog or body carries AI-generated provenance">generated ✎</span>' : ''}</div>
+    ${reads}
+    <div class="keepbar" id="keepbar"></div>
+    <div class="body" id="body"></div>
+    ${replyHtml(it.id)}
+    <div class="edges">
+      <div><h2>quotes / responds to</h2>${collapseOut(it.edges.out).map(e => edge(e, 'out')).join('') || '<div class="muted small">none</div>'}</div>
+      <div><h2>quoted by / responses</h2>${it.edges.in.map(e => edge(e, 'in')).join('') || '<div class="muted small">none held</div>'}</div>
+    </div>
+    ${it.changelog.length > 1 ? `<h2>changelog</h2>${it.changelog.map(c => `<div class="small">v${c.version} · ${fmtDate(c.at)}${c.generated ? ' · generated' : ''} ${c.note ? '— ' + esc(c.note) : ''}</div>`).join('')}` : ''}
+    <h2>more like this</h2><div id="similar" class="spinner">looking…</div>
+  </article>`;
+  fillItemBody($('#body'), it);
+  renderKeepBar(it, g);
+  // The /similar call can outlive this view (user clicks on mid-load): write only if this render is current and the slot is still there.
+  let html;
+  try {
+    const s = await api(`/similar?origin=${encodeURIComponent(it.origin)}&id=${it.id}`);
+    html = (Array.isArray(s.hits) ? s.hits : []).slice(0, 6).map(h => hitHtml(h)).join('') || '<div class="muted small">nothing close</div>';
+  } catch (e) { html = `<div class="muted small">${esc(e.message)}</div>`; }
+  const slot = $('#similar');
+  if (!stale(g) && slot) slot.outerHTML = html;
+}
+// Several partial transclusions of one target are one link with a passage count.
+function collapseOut(edges) {
+  const seen = new Map();
+  for (const e of edges) {
+    if (e.type === 'blogroll') continue;
+    const k = e.type + '|' + (e.target || e.url);
+    if (seen.has(k)) seen.get(k).passages = (seen.get(k).passages || 1) + 1;
+    else seen.set(k, { ...e });
+  }
+  return [...seen.values()];
+}
+// origin helpers: edges carry short origins; the item's own origin set and the map tell us the long form.
+const ORIGINS = new Set();
+const originOf = url => { const m = String(url || '').match(/^(https?:\/\/.*?\/)(?:f|t)\/[0-9a-z]{26}\/?$/); return m ? m[1] : url; };
+const originFromShort = s => { for (const o of ORIGINS) if (short(o) === s) return o; return 'https://' + s + '/'; };
+const knownOrigin = o => { for (const k of ORIGINS) if (k === o || k === o.replace(/\/$/, '') + '/') return k; return null; };
+async function loadOrigins() { try { const m = await api('/map'); m.origins.forEach(o => ORIGINS.add('https://' + o.origin + '/')); } catch {} }
+
+// Pulse: what moved in the neighborhood, grouped by thread. Range buttons; "mark all seen" sets the reader's marker
+// (the watermark) to now, and "unseen" is what moved after it. Crawling fetches; only this button moves the marker.
+async function viewPulse(days) {
+  main.innerHTML = `<p class="spinner">diffing the network against what you've read…</p>`;
+  const g = viewGen;
+  const r = await api(`/pulse?limit=40${days ? '&days=' + days : ''}`);
+  if (stale(g)) return;
+  const when = fmtWhen(r.since);
+  const evHtml = (e) => {
+    const item = `<a href="${itemHash(e.origin, e.id)}">${esc(e.title || e.id)}</a>`;
+    let subj;
+    if (e.by) {
+      const verb = e.kind === 'responded' ? 'responded to' : e.kind === 'quoted' ? 'quoted' : 'forked';
+      subj = `<span class="muted">${esc(e.by.author || short(e.by.origin))}</span> ${verb} ${item} <span class="muted">in</span> <a href="${itemHash(e.by.origin, e.by.id)}">${esc(e.by.title || e.by.id)}</a>`;
+    } else {
+      const verb = e.kind === 'new' ? 'posted' : e.kind === 'revised' ? `revised → v${e.version}` : 'responded:';
+      subj = `<span class="muted">${esc(e.author || short(e.origin))}</span> ${verb} ${item}`;
+    }
+    return `<div class="ev ${e.changed_since_read ? 'changed' : ''}"><span class="k">${fmtDate(e.at)}</span>${subj}${e.note ? ` <span class="note">— ${esc(e.note.slice(0, 140))}</span>` : ''}${e.changed_since_read ? ` <span class="pill stale">changed since your read</span>` : e.reads ? ` ${readMark(e)}` : ''}${replyHtml(e.by ? e.by.id : e.id)}</div>`;
+  };
+  const range = `<div class="range"><span class="muted small">since ${when}${r.last_viewed && !days ? ' (when you last marked all seen)' : ''} · </span>${[1, 3, 7, 14].map(d => `<a href="#/pulse/${d}" class="${days == d ? 'on' : ''}">${d}d</a>`).join('')}<a href="#/pulse" class="${!days ? 'on' : ''}" title="what moved since you last pressed “mark all seen”">unseen</a> <button id="caughtup" title="you have looked at these: from now on “unseen” shows only what moves after this moment. Crawling does not do this for you.">mark all seen</button></div>`;
+  main.innerHTML = range +
+    `<div class="meta" style="margin-top:8px">${r.threads_total} threads moved · ${r.events_total} events · ${r.by_origin.slice(0, 5).map(o => `${esc(short(o.origin))} ${o.new}n/${o.revised}r${o.quoted ? '/' + o.quoted + 'q' : ''}`).join(' · ')}</div>` +
+    (r.new_origins.length ? `<h2>new on the map</h2>` + r.new_origins.map(o => `<div class="small"><a href="#/recent/${encodeURIComponent(o.origin)}">${esc(short(o.origin))}</a> <span class="muted">${esc(o.author || o.title || '')} · ${o.items} items · via ${esc(o.via || '?')}</span></div>`).join('') : '') +
+    `<h2>threads</h2>` + (r.threads.map(t => `<div class="thread">
+      <h3><a href="${itemHash(t.root.origin, t.root.id)}">${esc(t.root.title || '(untitled root)')}</a>${t.root.crawled ? '' : ' <span class="pill">root not crawled</span>'}</h3>
+      <div class="meta">${esc(t.root.author || short(t.root.origin))} · ${t.event_count} event${t.event_count === 1 ? '' : 's'} · <span class="score">${t.score.toFixed(2)}</span> · ${esc(t.why)}</div>
+      ${t.events.map(evHtml).join('')}${t.event_count > t.events.length ? `<div class="muted small">… ${t.event_count - t.events.length} more</div>` : ''}
+    </div>`).join('') || '<p class="muted">nothing moved in this window.</p>');
+  $('#caughtup').onclick = async () => { await post('/pulse/viewed', {}); location.hash = '#/pulse'; route(); };
+}
+
+// ---------------------------------------------------------------- standing queries
+// A query is text you declared; a run is that query against what moved since you last looked at it; a keep is
+// an item you filed under it. Keeps add seeds; the ranking is always against the query text.
+let QUERIES = null; // active queries, for the item page's keep-under menu
+async function loadQueries() { QUERIES = await api('/queries'); return QUERIES; }
+
+async function viewQueries() {
+  main.innerHTML = `<p class="spinner">loading…</p>`;
+  const g = viewGen;
+  const qs = await api('/queries?all=1');
+  if (stale(g)) return;
+  QUERIES = qs.filter(q => q.active);
+  const row = q => `<div class="qrow">
+      <h3><a href="#/query/${q.id}">${esc(q.text)}</a></h3>
+      <div class="meta">${q.unseen ? `<span class="pill new">${q.unseen} new</span> ` : '<span class="muted">nothing new</span> '}since ${q.last_viewed ? fmtWhen(q.last_viewed) : 'never looked'}
+        · ${q.moved_last_run === null ? 'not run yet' : `${q.moved_last_run} moved last run`} · keeps ${q.keeps}/${q.runs} runs${q.note ? ` · <i>${esc(q.note)}</i>` : ''}</div>
+      ${q.top ? `<div class="small">top: <a href="${itemHash(q.top.origin, q.top.id)}">${esc(q.top.title || q.top.id)}</a> <span class="muted">${esc(q.top.author || short(q.top.origin))} · <span class="score">${q.top.score.toFixed(2)}</span></span></div>` : ''}
+    </div>`;
+  const active = qs.filter(q => q.active), retired = qs.filter(q => !q.active);
+  main.innerHTML = `<h2>standing queries</h2>
+    <p class="muted small">What you said you're after, run each morning against what moved since you last looked. Declare one from any search with <i>save as standing query</i>, or here:</p>
+    <div class="reply"><input id="newq" type="text" placeholder="declare a query…" style="font:inherit;font-size:15px;width:75%;background:var(--soft);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px"> <button class="act" id="addq">declare</button></div>` +
+    (active.map(row).join('') || '<p class="muted">none yet.</p>') +
+    (retired.length ? `<details><summary>${retired.length} retired</summary>${retired.map(q => `<div class="small"><a href="#/query/${q.id}">${esc(q.text)}</a> <span class="muted">keeps ${q.keeps}/${q.runs} runs</span></div>`).join('')}</details>` : '');
+  const add = async () => {
+    const text = $('#newq').value.trim(); if (!text) return;
+    $('#addq').disabled = true; $('#addq').textContent = 'running…';
+    try { const r = await post('/queries', { text }); location.hash = `#/query/${r.query.id}`; } catch (e) { $('#addq').textContent = e.message; }
+  };
+  $('#addq').onclick = add;
+  $('#newq').onkeydown = e => { if (e.key === 'Enter') add(); };
+}
+
+function queryHitHtml(qid, h) {
+  const verb = h.context ? `${h.moved} — the thread it moved against` : h.moved;
+  return `<div class="hit" data-hit="${esc(h.origin)}|${h.id}">
+    <h3><a href="${itemHash(h.origin, h.id)}">${esc(h.title || '(untitled)')}</a></h3>
+    <div class="meta">${h.state === 'new' ? '<span class="pill new">new</span> ' : h.state === 'kept' ? '<span class="pill kept">kept</span> ' : ''}${esc(h.author || short(h.origin))} · ${esc(short(h.origin))} · ${esc(verb)} ${fmtDate(h.moved_at)} ${readMark(h)}
+      <span class="score"> · rerank ${Number(h.rerank_score).toFixed(2)}</span></div>
+    <div class="path">${esc((h.path || []).join(' '))}</div>
+    <div class="excerpt">${esc((h.excerpt || '').slice(0, 260))}</div>
+    <div class="acts">${h.state === 'kept' ? `<button class="act on" data-q="unkeep">kept ✓</button>` : `<button class="act" data-q="keep">keep</button>`}${h.state !== 'kept' ? `<button class="act" data-q="dismiss">dismiss</button>` : ''}</div>
+    ${replyHtml(h.id)}
+  </div>`;
+}
+
+async function viewQuery(id) {
+  main.innerHTML = `<p class="spinner">loading…</p>`;
+  const g = viewGen;
+  const s = await api(`/query/${id}`);
+  if (stale(g)) return;
+  const q = s.query, lr = s.last_run;
+  document.title = `${q.text} — atlas`;
+  main.innerHTML = `<div class="qhead">
+      <div class="meta"><a href="#/queries">standing queries</a> · #${q.id}${q.active ? '' : ' · retired'}</div>
+      <h1 class="title">${esc(q.text)}</h1>
+      ${q.note ? `<div class="meta"><i>${esc(q.note)}</i></div>` : ''}
+      <div class="meta">since ${fmtWhen(s.since)}${q.last_viewed ? ' (when you last marked it seen)' : ''} · ${lr ? `last run ${fmtWhen(lr.at)}: <b>${lr.moved}</b> items moved, ${lr.pooled} pooled, ${lr.hits} cleared the floor` : 'not run yet'} · keeps ${s.keeps.length}/${s.runs} runs</div>
+      <div class="range" style="margin-top:6px"><button id="qrun">run now</button><button id="qseen" title="you have looked at these hits: later runs show only what moves after this moment">mark seen</button><button id="qactive" title="${q.active ? 'stop running it, keep its history and keeps' : 'run it again'}">${q.active ? 'retire' : 'revive'}</button><button id="qdel" title="remove this query with its runs, hits and keeps">delete</button></div>
+    </div>
+    <div id="qhits">${s.hits.map(h => queryHitHtml(id, h)).join('') || `<p class="muted">nothing since you last looked${lr ? ` — ${lr.moved} items moved in the window, none cleared the floor` : ''}.</p>`}</div>
+    ${s.hits.length > 1 && lr && lr.moved < 25 ? `<p class="muted small">A small diff and few keeps means several queries can surface the same few items: that's the network being quiet, not the ranking failing.</p>` : ''}
+    <details><summary>kept under this query (${s.keeps.length})</summary>${s.keeps.map(k => `<div class="small"><a href="${itemHash(k.origin, k.id)}">${esc(k.title || k.id)}</a> <span class="muted">${esc(k.author || '')} · kept ${fmtDate(k.kept_at)}${k.current_version > k.version ? ` · <span class="pill stale">v${k.version} → v${k.current_version}</span>` : ''}${k.note ? ' — ' + esc(k.note) : ''}</span></div>`).join('') || '<div class="muted small">nothing kept yet — keeps become extra seeds for this query.</div>'}</details>`;
+  $('#qrun').onclick = async () => { $('#qrun').textContent = 'running…'; $('#qrun').disabled = true; try { await post(`/query/${id}/run`, {}); } catch (e) { $('#qrun').textContent = e.message; return; } if (!stale(g)) route(); };
+  $('#qseen').onclick = async () => { await post(`/query/${id}/seen`, {}); if (!stale(g)) route(); };
+  $('#qactive').onclick = async () => { await post(`/query/${id}/active`, { active: !q.active }); QUERIES = null; if (!stale(g)) route(); };
+  $('#qdel').onclick = async () => {
+    if (!confirm(`Delete this query${s.keeps.length ? ` and the ${s.keeps.length} item${s.keeps.length === 1 ? '' : 's'} kept under it` : ''}? This cannot be undone. (Retire stops it running and keeps the history.)`)) return;
+    await post(`/query/${id}/delete`, {}); QUERIES = null; location.hash = '#/queries';
+  };
+  $('#qhits').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-q]'); if (!b) return;
+    const row = b.closest('[data-hit]'); const [origin, iid] = row.dataset.hit.split('|');
+    const act = b.dataset.q; b.disabled = true;
+    try {
+      await post(`/query/${id}/${act}`, { origin, id: iid });
+      if (!row.isConnected) return;
+      if (act === 'dismiss') { row.style.opacity = .35; row.querySelector('.acts').innerHTML = '<span class="muted small">dismissed — returns only if revised with a note</span>'; }
+      else row.querySelector('.acts').innerHTML = act === 'keep' ? `<button class="act on" data-q="unkeep">kept ✓</button>` : `<button class="act" data-q="keep">keep</button><button class="act" data-q="dismiss">dismiss</button>`;
+    } catch (err) { b.textContent = err.message; }
+  });
+}
+
+// Item page: keep under one of the active queries, or declare a new one and keep under it.
+async function renderKeepBar(it, g) {
+  const bar = $('#keepbar'); if (!bar) return;
+  let qs; try { qs = QUERIES || await loadQueries(); } catch { return; }
+  if (stale(g) || !bar.isConnected) return;
+  const under = qs.filter(q => it.kept_under.includes(q.id));
+  bar.innerHTML = `${under.length ? `kept under ${under.map(q => `<a href="#/query/${q.id}">${esc(q.text.slice(0, 50))}${q.text.length > 50 ? '…' : ''}</a>`).join(', ')} · ` : ''}keep under <select id="keepsel"><option value="">…</option>${qs.filter(q => !it.kept_under.includes(q.id)).map(q => `<option value="${q.id}">${esc(q.text.slice(0, 70))}</option>`).join('')}<option value="new">new query…</option></select>`;
+  $('#keepsel').onchange = async e => {
+    let qid = e.target.value; if (!qid) return;
+    if (qid === 'new') {
+      const text = prompt('Declare a standing query (the text is the query, verbatim):'); if (!text || !text.trim()) { e.target.value = ''; return; }
+      qid = (await post('/queries', { text: text.trim() })).query.id; QUERIES = null;
+    }
+    await post(`/query/${qid}/keep`, { origin: it.origin, id: it.id });
+    if (stale(g)) return;
+    it.kept_under = [...it.kept_under, Number(qid)];
+    renderKeepBar(it, g);
+  };
+}
+
+// ---------------------------------------------------------------- casual replies
+// Typed where the urge arrives. Preview runs the publisher with --dry-run (nothing written); the publish button is
+// the look before the wire. The reply stubs the item; a selection in the item body comes along as a partial quote.
+let lastSelection = '';
+document.addEventListener('selectionchange', () => {
+  const sel = getSelection(); const body = $('#body');
+  if (sel && body && sel.rangeCount && body.contains(sel.anchorNode) && sel.toString().trim()) lastSelection = sel.toString().trim();
+});
+function replyHtml(id) {
+  if (!features.publisher) return '';
+  return `<div class="reply" data-reply="${id}"><button class="act" data-r="open">reply</button></div>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button[data-r]'); if (!b) return;
+  const box = b.closest('[data-reply]'); const ref = box.dataset.reply;
+  if (b.dataset.r === 'open') {
+    const quote = $('#body') && $('#body').contains(box) === false && box.closest('article') ? lastSelection : '';
+    box.innerHTML = `<textarea class="quote" rows="2" placeholder="quote (optional) — select text in the item first and it lands here">${esc(quote)}</textarea>
+      <textarea class="text" rows="3" placeholder="a couple of sentences"></textarea>
+      <button class="act" data-r="preview">preview</button><button class="act" data-r="close">cancel</button><div class="out"></div>`;
+    box.querySelector('.text').focus();
+    return;
+  }
+  if (b.dataset.r === 'close') { box.innerHTML = `<button class="act" data-r="open">reply</button>`; return; }
+  const body = { ref, text: box.querySelector('.text').value, quote: box.querySelector('.quote').value };
+  const out = box.querySelector('.out');
+  if (b.dataset.r === 'preview') {
+    if (!body.text.trim()) { out.innerHTML = '<span class="err small">write something first</span>'; return; }
+    out.innerHTML = '<p class="spinner small">rendering…</p>';
+    const r = await post('/reply/preview', body).catch(err => ({ ok: false, output: err.message }));
+    if (!box.isConnected) return;
+    out.innerHTML = `<pre>${esc(r.output)}</pre>` + (r.ok ? `<button class="act on" data-r="publish">publish to your blyg</button> <span class="muted small">commits, pushes, then sends the mention once the page is live</span>` : '');
+    box.dataset.preview = JSON.stringify(body);
+    return;
+  }
+  if (b.dataset.r === 'publish') {
+    if (box.dataset.preview !== JSON.stringify(body)) { out.innerHTML = '<span class="err small">edited since the preview — preview again</span>'; return; }
+    b.disabled = true; b.textContent = 'publishing…';
+    const r = await post('/reply', body).catch(err => ({ ok: false, output: err.message }));
+    if (!box.isConnected) return;
+    box.innerHTML = r.ok ? `<div class="small">published · <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a><br><span class="muted">${esc(r.mention)}</span></div>` : `<pre class="err">${esc(r.output)}</pre>`;
+  }
+});
+
+async function viewRecent() {
+  main.innerHTML = `<p class="spinner">loading…</p>`;
+  const g = viewGen;
+  const rows = await api('/recent?limit=60');
+  if (stale(g)) return;
+  main.innerHTML = `<h2>recent across the network</h2>` + rows.map(r => hitHtml({ ...r, author: r.author, title: r.title, excerpt: r.excerpt })).join('');
+}
+
+async function viewHistory() {
+  main.innerHTML = `<p class="spinner">loading…</p>`;
+  const g = viewGen;
+  const t = await api('/reads?limit=60');
+  if (stale(g)) return;
+  const row = r => `<div class="small">${fmtWhen(r.at)} · <a href="${itemHash(r.origin, r.item_id)}">${esc(r.title || r.item_id)}</a> <span class="muted">${esc(r.author || short(r.origin))}${r.dwell_ms > 20000 ? ' · ' + ms(r.dwell_ms) : ''}</span></div>`;
+  main.innerHTML = `<h2>history <span class="muted">— what you opened, newest first</span></h2>` + (t.recent.map(row).join('') || '<p class="muted">nothing read yet — open an item and it shows up here</p>') +
+    (t.most_read.length ? `<h2>most read</h2><table><tr><th>item</th><th>author</th><th class="n">reads</th><th class="n">dwell</th><th>last</th></tr>${t.most_read.map(m => `<tr><td><a href="${itemHash(m.origin, m.item_id)}">${esc(m.title || m.ref)}</a></td><td class="muted">${esc(m.author || '')}</td><td class="n">${m.reads}</td><td class="n">${ms(m.dwell_ms)}</td><td class="muted">${fmtDate(m.last_read)}</td></tr>`).join('')}</table>` : '');
+}
+
+async function viewMap() {
+  main.innerHTML = `<p class="spinner">loading…</p>`;
+  const g = viewGen;
+  const [m, f, st] = await Promise.all([api('/map'), api('/frontier'), api('/stale')]);
+  if (stale(g)) return;
+  const t = m.totals;
+  main.innerHTML = `<div class="meta">${t.blygs} blygs · ${t.items} items · ${t.embedded} embedded · ${t.edges} edges (${m.edges_by_type.map(e => e.n + ' ' + e.type).join(', ')}) · last crawl ${fmtWhen(m.last_crawl?.finished)} <button id="crawl" class="small">crawl now</button></div>
+    <h2>origins</h2><table><tr><th>blyg</th><th>author</th><th class="n">items</th><th class="n">quotes out</th><th class="n">quoted</th><th class="n">stubs out</th><th class="n">stubbed</th><th class="n">hop</th><th>generator</th></tr>
+    ${m.origins.filter(o => o.kind === 'blyg').map(o => `<tr><td><a href="#/recent/${encodeURIComponent('https://' + o.origin + '/')}">${esc(o.origin)}</a></td><td class="muted">${esc(o.author_name || '')}</td><td class="n">${o.items}</td><td class="n">${o.quotes_out}</td><td class="n">${o.quoted_in}</td><td class="n">${o.stubs_out}</td><td class="n">${o.stubbed_in}</td><td class="n">${o.hop}</td><td class="muted small">${esc((o.generator || '').split(' ')[0])}</td></tr>`).join('')}</table>
+    <h2>most cited, last 14 days</h2>${m.most_cited_recent.map(c => `<div class="card"><h3><a href="${itemHash(originFromShort(c.ref.split(' ')[0]), c.ref.split(' ')[1])}">${esc(c.title)}</a></h3><div class="meta">${esc(c.author || '')} · cited by ${c.citing_origins} origin${c.citing_origins === 1 ? '' : 's'}, ${c.cites} times</div></div>`).join('')}
+    <h2>stale quotes</h2>${st.stale.slice(0, 12).map(s => `<div class="card small"><a href="${itemHash(originFromShort(s.source.split(' ')[0]), s.source.split(' ')[1])}">${esc(s.source_title || s.source)}</a> <span class="muted">${s.type}s</span> <a href="${itemHash(originFromShort(s.target.split(' ')[0]), s.target.split(' ')[1])}">${esc(s.target_title || s.target)}</a> <span class="pill stale">v${s.pinned_version} → v${s.current_version}</span></div>`).join('') || '<div class="muted small">none</div>'}
+    <h2>frontier — known, not crawled</h2>${f.uncrawled_origins.map(o => `<div class="small"><span class="muted">${esc(o.kind)}</span> <a href="${esc(o.origin)}" target="_blank" rel="noopener">${esc(short(o.origin))}</a> <span class="muted">in ${o.in_blogrolls} blogroll${o.in_blogrolls === 1 ? '' : 's'}${o.cited_by_items ? `, cited by ${o.cited_by_items}` : ''}${o.last_error ? ' · ' + esc(o.last_error) : ''}</span></div>`).join('')}`;
+  const btn = $('#crawl');
+  btn.onclick = async () => { btn.textContent = 'crawling…'; btn.disabled = true; try { const r = await post('/crawl', {}); btn.textContent = `done: ${r.items_fetched} items, ${r.embed?.embedded ?? 0} embedded`; } catch (e) { btn.textContent = e.message; } };
+}
+
+async function viewRecentOrigin(origin) {
+  main.innerHTML = `<p class="spinner">loading…</p>`;
+  const g = viewGen;
+  const rows = await api(`/recent?limit=80&origin=${encodeURIComponent(short(origin))}`);
+  if (stale(g)) return;
+  main.innerHTML = `<h2>${esc(short(origin))} — newest</h2>` + rows.map(r => hitHtml(r)).join('');
+}
+
+async function viewHome() {
+  const g = viewGen;
+  const rows = await api('/recent?limit=12');
+  let p = null; try { p = await api('/pulse?limit=5&days=3'); } catch {}
+  let qs = []; try { qs = await loadQueries(); } catch {}
+  if (stale(g)) return;
+  main.innerHTML = `<p class="muted">A reader-side map of the blygger network: ${ORIGINS.size} blygs crawled, searched and walked locally. Search above, or start from what's new.</p>` +
+    (qs.length ? `<h2><a href="#/queries">standing queries</a> — what you said you're after</h2>` + qs.map(q => `<div class="small"><a href="#/query/${q.id}">${esc(q.text)}</a> <span class="muted">· ${q.unseen ? `<span class="pill new">${q.unseen} new</span>` : 'nothing new'} · ${q.moved_last_run ?? '—'} moved</span></div>`).join('') : '') +
+    (p && p.threads.length ? `<h2><a href="#/pulse">pulse</a> — last 3 days, weighted by what you've read</h2>` + p.threads.map(t => `<div class="small"><a href="${itemHash(t.root.origin, t.root.id)}">${esc(t.root.title || '(untitled)')}</a> <span class="muted">${esc(t.root.author || short(t.root.origin))} · ${t.event_count} event${t.event_count === 1 ? '' : 's'}${t.changed_since_read ? ' · <span class="read">changed since your read</span>' : ''}</span></div>`).join('') : '') +
+    `<h2>recent</h2>` + rows.map(r => hitHtml(r)).join('');
+}
+
+// ---------------------------------------------------------------- router
+async function route() {
+  const h = location.hash || '#/field';   // the dashboard opens on the field
+  syncSearchBox();
+  const parts = h.slice(2).split('?')[0].split('/');
+  // the field's blobs view moves between its levels in place (animated), so a #/field?c= change is offered to it first
+  if (parts[0] === 'field' && typeof fieldHashNav === 'function' && fieldHashNav(new URLSearchParams(h.split('?')[1] || ''))) return;
+  const g = ++viewGen;
+  lastSelection = '';
+  flushDwell();   // leaving an item page: send how long it was open
+  try {
+    if (parts[0] === 'search') await viewSearch(decodeURIComponent(parts.slice(1).join('/')));
+    else if (parts[0] === 'item') await viewItem(decodeURIComponent(parts[1]), parts[2]);
+    else if (parts[0] === 'pulse') await viewPulse(parts[1] ? Number(parts[1]) : 0);
+    else if (parts[0] === 'queries') await viewQueries();
+    else if (parts[0] === 'query' && parts[1]) await viewQuery(Number(parts[1]));
+    else if (parts[0] === 'recent' && parts[1]) await viewRecentOrigin(decodeURIComponent(parts[1]));
+    else if (parts[0] === 'recent') await viewRecent();
+    else if (parts[0] === 'history') await viewHistory();
+    else if (parts[0] === 'map') await viewMap();
+    else if (parts[0] === 'field') await viewField(new URLSearchParams(h.split('?')[1] || ''));
+    else await viewHome();
+  } catch (e) { if (!stale(g)) main.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  if (!stale(g)) scrollTo(0, 0);
+}
+// One search box. On the field it lights up the map (the field's own search; an empty Enter clears it), and the chip
+// beside the map has the same search as a list; shift+Enter goes straight to the list. Everywhere else: the list.
+const onField = () => (location.hash || '#/field').startsWith('#/field');
+q.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const v = q.value.trim();
+  if (onField() && typeof fieldSearch === 'function' && !e.shiftKey) { fieldSearch(v); q.blur(); return; }
+  if (v) location.hash = '#/search/' + encodeURIComponent(v);
+});
+const SEARCH_PH = q.placeholder;
+const syncSearchBox = () => { q.placeholder = onField() ? 'search — lights up the map (shift+Enter for a list)' : SEARCH_PH; };
+addEventListener('hashchange', route);
+// Optional parts, announced by the server: casual replies (needs a publisher in atlas.config.json). Absent from the
+// page unless the server has it.
+let features = { publisher: false };
+const loadFeatures = api('/features').then(f => {
+  features = { ...features, ...f };
+}).catch(() => {});
+Promise.all([loadFeatures, loadOrigins()]).then(() => { route(); });
+</script>
+<script src="field.js"></script>
+</body>
+</html>

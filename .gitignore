@@ -1,0 +1,20 @@
+node_modules/
+# the reader's own state — never shipped, never shared (spec §16.6d: nothing derived leaves the machine)
+atlas.db
+atlas.db-shm
+atlas.db-wal
+seeds.json
+atlas.config.json
+field-sidecar.json
+crawl.log
+serve.log
+.env
+.model-cache/
+# derived files of the entity map (not in this release)
+entity-index.json
+entity-aliases.json
+entity-build.log
+terms-sidecar.json
+.DS_Store
+# a local rendering of the README
+README.html

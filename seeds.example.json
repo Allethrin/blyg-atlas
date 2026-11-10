@@ -1,0 +1,7 @@
+{
+  "_note": "Crawl seeds — your subscription list, the root of your reader-side map. Copy this file to seeds.json and edit. Any URL works: a blyg origin, its feed, or an HTML page carrying rel=blyg. The walker follows blogrolls, transclusions, stubs, forks and links from here up to --hops.",
+  "seeds": [
+    "https://venkateshrao.com/blyg/",
+    "https://blyg.blygger.org/"
+  ]
+}
