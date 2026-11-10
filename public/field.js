@@ -1791,8 +1791,10 @@ async function viewField(p) {
       const across = timeAcross();
       const txt = (t, i) => across && i < 2 ? ((R.s1 > 0) === (i === 0) ? 'later' : 'earlier') : (t || []).slice(0, 3).join(' · ');
       const labels = [
-        { k: 'r', x: W - 14, y: H / 2, rot: 90, anchor: 'middle', text: txt(terms[0], 0) + ' →' },
-        { k: 'l', x: 14, y: H / 2, rot: -90, anchor: 'middle', text: '← ' + txt(terms[1], 1) },
+        // the side labels are turned on their sides, so the arrow that points outward once turned is ↑ on both; the
+        // time poles carry none (earlier and later say it)
+        { k: 'r', x: W - 14, y: H / 2, rot: 90, anchor: 'middle', text: across ? txt(terms[0], 0) : '↑ ' + txt(terms[0], 0) },
+        { k: 'l', x: 14, y: H / 2, rot: -90, anchor: 'middle', text: across ? txt(terms[1], 1) : '↑ ' + txt(terms[1], 1) },
         { k: 't', x: W / 2, y: 20, rot: 0, anchor: 'middle', text: '↑ ' + txt(terms[2], 2) },
         { k: 'b', x: W / 2, y: H - (MT ? 26 : 10), rot: 0, anchor: 'middle', text: txt(terms[3], 3) + ' ↓' },
       ];
@@ -2833,12 +2835,22 @@ async function viewField(p) {
   // `/`: to the search — the page's bar, or in full screen (where the bar is hidden) a small box over the map. Enter
   // searches and puts the box away; an empty Enter clears.
   const find = main.querySelector('.ffind'), ffq = find.querySelector('input');
-  ffq.addEventListener('keydown', ev => { if (ev.key === 'Enter') { runSearch(ffq.value.trim()); find.hidden = true; ffq.blur(); } });
+  const asList = qs => { location.hash = '#/search/' + encodeURIComponent(qs); };
+  ffq.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter') return;
+    const v = ffq.value.trim();
+    if (ev.shiftKey && v) return asList(v);
+    runSearch(v); find.hidden = true; ffq.blur();
+  });
+  ffq.addEventListener('input', () => { if (!ffq.value.trim() && fieldState.q) runSearch(''); });
   ffq.addEventListener('blur', () => { find.hidden = true; });
   function openFind() { find.hidden = false; ffq.value = fieldState.q || ''; ffq.focus(); ffq.select(); }
   const onSlash = ev => {
     if (stale(g) || !find.isConnected) { document.removeEventListener('keydown', onSlash); return; }
-    if (ev.key !== '/' || ev.metaKey || ev.ctrlKey || ev.altKey || ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement || (ev.target && ev.target.isContentEditable)) return;
+    if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement || (ev.target && ev.target.isContentEditable)) return;
+    // Enter lights the map and lets go of the box, so shift+Enter has to work from the map as well: the lit search, as a list
+    if (ev.key === 'Enter' && ev.shiftKey && fieldState.q) { ev.preventDefault(); return asList(fieldState.q); }
+    if (ev.key !== '/') return;
     ev.preventDefault();
     if (document.body.classList.contains('ffull')) openFind();
     else if (topQ) { topQ.focus(); topQ.select(); }

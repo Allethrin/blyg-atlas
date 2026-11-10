@@ -497,6 +497,8 @@ q.addEventListener('keydown', e => {
   if (onField() && typeof fieldSearch === 'function' && !e.shiftKey) { fieldSearch(v); q.blur(); return; }
   if (v) location.hash = '#/search/' + encodeURIComponent(v);
 });
+// Emptying the box (by hand or with the field's own ×) puts the map's lights out too; no Enter needed.
+q.addEventListener('input', () => { if (!q.value.trim() && onField() && typeof fieldSearch === 'function' && fieldState.q) fieldSearch(''); });
 const SEARCH_PH = q.placeholder;
 const syncSearchBox = () => { q.placeholder = onField() ? 'search — lights up the map (shift+Enter for a list)' : SEARCH_PH; };
 addEventListener('hashchange', route);
