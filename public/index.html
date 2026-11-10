@@ -440,7 +440,7 @@ async function viewMap() {
     <h2>stale quotes</h2>${st.stale.slice(0, 12).map(s => `<div class="card small"><a href="${itemHash(originFromShort(s.source.split(' ')[0]), s.source.split(' ')[1])}">${esc(s.source_title || s.source)}</a> <span class="muted">${s.type}s</span> <a href="${itemHash(originFromShort(s.target.split(' ')[0]), s.target.split(' ')[1])}">${esc(s.target_title || s.target)}</a> <span class="pill stale">v${s.pinned_version} → v${s.current_version}</span></div>`).join('') || '<div class="muted small">none</div>'}
     <h2>frontier — known, not crawled</h2>${f.uncrawled_origins.map(o => `<div class="small"><span class="muted">${esc(o.kind)}</span> <a href="${esc(o.origin)}" target="_blank" rel="noopener">${esc(short(o.origin))}</a> <span class="muted">in ${o.in_blogrolls} blogroll${o.in_blogrolls === 1 ? '' : 's'}${o.cited_by_items ? `, cited by ${o.cited_by_items}` : ''}${o.last_error ? ' · ' + esc(o.last_error) : ''}</span></div>`).join('')}`;
   const btn = $('#crawl');
-  btn.onclick = async () => { btn.textContent = 'crawling…'; btn.disabled = true; try { const r = await post('/crawl', {}); btn.textContent = `done: ${r.items_fetched} items, ${r.embed?.embedded ?? 0} embedded`; } catch (e) { btn.textContent = e.message; } };
+  btn.onclick = async () => { btn.textContent = 'crawling…'; btn.disabled = true; try { const r = await post('/crawl', {}); btn.textContent = `done: ${r.items_fetched} items, ${r.embed?.embedded ?? 0} embedded` + (r.passed_over ? ` · stopped at the cap of ${r.max_origins} origins, ${r.passed_over} not looked at (crawl with --max-origins to raise it)` : ''); } catch (e) { btn.textContent = e.message; } };
 }
 
 async function viewRecentOrigin(origin) {

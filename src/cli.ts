@@ -3,7 +3,7 @@
 //   (blyg-atlas = bin/blyg-atlas, or `npx tsx src/cli.ts`)
 //   blyg-atlas serve [--port 5053]     the dashboard → http://127.0.0.1:5053
 //   blyg-atlas mcp                     the MCP server on stdio
-//   blyg-atlas crawl [--hops 2] [--max-origins 60] [--no-embed] [--refresh-all] [--no-revisit] [--wait 3600] [--json] [seed-url ...]
+//   blyg-atlas crawl [--hops 2] [--max-origins 500] [--no-embed] [--refresh-all] [--no-revisit] [--wait 3600] [--json] [seed-url ...]
 //                                      --wait N: while no seed answers at all, retry every 15 s for N seconds' worth of tries
 //                                      (a scheduled run on a laptop that wakes before its network); --no-revisit: follow only
 //                                      what the seeds lead to this run, do not re-check the blygs already held
@@ -40,7 +40,7 @@ const USAGE = `blyg-atlas — a reader-side atlas of the blygger network
                blyg-atlas crawl                     walk the network from your seeds, embed what it finds
                blyg-atlas serve                     the dashboard and the Field → http://127.0.0.1:5053
 
-  crawl [--hops 2] [--max-origins 60] [--no-embed] [--refresh-all] [--no-revisit] [--wait 3600] [--json] [seed-url ...]
+  crawl [--hops 2] [--max-origins 500] [--no-embed] [--refresh-all] [--no-revisit] [--wait 3600] [--json] [seed-url ...]
   embed | reembed                     embed what is missing | drop every vector and embed again
   serve [--port 5053]                 the dashboard
   mcp                                 the same tools as an MCP server on stdio

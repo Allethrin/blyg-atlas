@@ -24,7 +24,7 @@ export const toolDefs: Tool[] = [
       properties: {
         seeds: { type: 'array', items: { type: 'string' }, description: 'Override seeds (origin, feed or page URLs). Default: seeds.json' },
         hops: { type: 'number', description: 'Max hops from a seed to follow (default 2). 0 = seeds only.' },
-        max_origins: { type: 'number', description: 'Cap on origins visited this run (default 60)' },
+        max_origins: { type: 'number', description: 'Cap on origins visited this run (default 500). A run that stops at it reports passed_over and a warning.' },
         follow: { type: 'array', items: { type: 'string', enum: ['blogroll', 'transclusion', 'stub', 'fork', 'link'] }, description: 'Edge types that enqueue new origins. Default: all' },
         refresh_all: { type: 'boolean', description: 'Ignore validators and re-fetch every item (default false)' },
         revisit: { type: 'boolean', description: 'Also re-check every blyg already held within the hop budget, not only what the seeds lead to this run (default: true with the seed list, false with seeds given here)' },
@@ -220,6 +220,7 @@ export async function executeTool(name: string, args: any, onLog?: (s: string) =
       const warnings: string[] = [];
       if (rep.seeds_unreachable === rep.seeds) warnings.push(`${rep.seeds === 1 ? 'the seed' : `none of the ${rep.seeds} seeds`} could not be reached — nothing was crawled (network down, or a wrong URL in seeds.json?)`);
       else if (rep.seeds_unreachable) warnings.push(`${rep.seeds_unreachable} of ${rep.seeds} seeds could not be reached`);
+      if (rep.passed_over) warnings.push(`stopped at the cap of ${rep.max_origins} origins with ${rep.passed_over} more queued and not looked at — blygs may be missing; raise it with --max-origins (max_origins)`);
       if (embed?.error) warnings.push(`embedding failed: ${embed.error} — the new items are stored but not searchable or on the Field until \`embed\` succeeds`);
       return J({ ...rep, embed, ...(warnings.length ? { warnings } : {}), log: lines.slice(-40) });
     }

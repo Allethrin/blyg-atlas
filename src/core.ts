@@ -366,7 +366,8 @@ export function normalizeOrigin(o: string): string {
 export interface CrawlOptions {
   seeds?: string[];
   maxHops?: number;        // distance from seeds to follow (default 2)
-  maxOrigins?: number;     // hard cap on origins visited per run (default 60)
+  maxOrigins?: number;     // hard cap on origins visited per run (default 500) — a guard against a runaway walk, not a
+                           // budget: a run that stops at it says so (passed_over, and a note)
   follow?: Array<'blogroll' | 'transclusion' | 'stub' | 'fork' | 'link'>; // which edge types enqueue new origins
   refreshAll?: boolean;    // ignore conditional-GET and re-fetch every item
   revisit?: boolean;       // also re-check every blyg already held, within the hop budget (default: yes when crawling from
@@ -383,6 +384,7 @@ export interface CrawlReport {
   kinds: { blyg: number; rss: number; unresolved: number };   // what the origins visited this run turned out to be
   rechecked: number;                                          // blygs already held that this run looked at again
   seeds: number; seeds_unreachable: number;                   // seeds asked for, and how many could not be reached at all
+  max_origins: number; passed_over: number;                   // the cap, and how many queued origins it left unlooked-at (0: the run was not cut short)
 }
 
 export function loadSeeds(): string[] {
@@ -403,7 +405,7 @@ export async function crawl(db: Database.Database, opts: CrawlOptions = {}): Pro
       : `no seeds: ${SEEDS_PATH} does not exist — copy seeds.example.json to seeds.json (cp seeds.example.json seeds.json) and edit it, or pass seed URLs to crawl`);
   }
   const maxHops = opts.maxHops ?? 2;
-  const maxOrigins = opts.maxOrigins ?? 60;
+  const maxOrigins = opts.maxOrigins ?? 500;
   const follow = new Set(opts.follow ?? ['blogroll', 'transclusion', 'stub', 'fork', 'link']);
   const now = () => new Date().toISOString();
   const errors: Array<{ origin: string; error: string }> = [];
@@ -447,6 +449,7 @@ export async function crawl(db: Database.Database, opts: CrawlOptions = {}): Pro
   const queue: Array<{ url: string; hop: number; via: string; from?: string }> = seeds.map(s => ({ url: s, hop: 0, via: 'seed' }));
   const attempted = new Set<string>();
   const visited = new Set<string>();
+  const passedOver = new Set<string>();   // queued, and not looked at because the run reached maxOrigins
 
   const cleanUrl = (u: string): string | null => {
     try { const x = new URL(u); x.hash = ''; x.search = ''; return x.toString(); } catch { return null; }
@@ -471,7 +474,7 @@ export async function crawl(db: Database.Database, opts: CrawlOptions = {}): Pro
   async function processJob(job: { url: string; hop: number; via: string; from?: string }): Promise<void> {
     if (attempted.has(job.url)) return;
     attempted.add(job.url);
-    if (originsVisited >= maxOrigins) return;
+    if (originsVisited >= maxOrigins) { passedOver.add(job.url); return; }
 
     let res: Resolved;
     try { res = await resolveOrigin(job.url); }
@@ -677,6 +680,15 @@ export async function crawl(db: Database.Database, opts: CrawlOptions = {}): Pro
     await Promise.all(batch.map(processJob));
   }
 
+  // Stopped at the cap with origins still queued: say so. Blygs already held go first, so what is passed over is (the
+  // cap permitting) what this run discovered — without this a network that outgrows the cap just stops gaining blygs, silently.
+  for (const j of queue) if (!attempted.has(j.url) && !visited.has(j.url) && !visited.has(dirOf(j.url))) passedOver.add(j.url);
+  if (passedOver.size) {
+    const some = [...passedOver].slice(0, 5).join(', ');
+    notes.push(`stopped at the cap of ${maxOrigins} origins with ${passedOver.size} more queued and not looked at (${some}${passedOver.size > 5 ? ', …' : ''}) — raise it with --max-origins`);
+    log(`stopped at the cap of ${maxOrigins} origins: ${passedOver.size} queued and not looked at — raise it with --max-origins`);
+  }
+
   // Post-pass: resolve blogroll dst_url → dst_origin, and bare [[id]] links → origin, now that we know more.
   resolveEdges(db);
   const frontier = (db.prepare(`SELECT COUNT(*) AS n FROM origins WHERE kind='unresolved' OR last_crawled IS NULL`).get() as any).n;
@@ -685,7 +697,7 @@ export async function crawl(db: Database.Database, opts: CrawlOptions = {}): Pro
     .run(now(), originsVisited, itemsFetched, itemsChanged, edgesAdded, JSON.stringify(errors), JSON.stringify(notes), runId);
 
   return { run_id: runId, origins_visited: originsVisited, items_fetched: itemsFetched, items_changed: itemsChanged, edges_added: edgesAdded, new_origins: newOrigins, frontier, errors, notes, seconds: Math.round((Date.now() - t0) / 100) / 10,
-    kinds, rechecked, seeds: seeds.length, seeds_unreachable: seedsUnreachable };
+    kinds, rechecked, seeds: seeds.length, seeds_unreachable: seedsUnreachable, max_origins: maxOrigins, passed_over: passedOver.size };
 }
 
 /** Fill in dst_origin for blogroll edges (by URL prefix match against known origins) and for bare [[id]] links (by id). */
