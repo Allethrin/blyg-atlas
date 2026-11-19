@@ -428,10 +428,11 @@ async function viewField(p) {
   const readColors = () => {
     const cs = getComputedStyle(document.documentElement);
     for (const v of ['bg', 'fg', 'mute', 'line', 'accent', 'soft', 'read']) C[v] = cs.getPropertyValue('--' + v).trim() || '#888';
-    // one soft disc in the accent, scaled per heat point (a blur filter per frame would be the slow part)
+    C.pulse = cs.getPropertyValue('--pulse').trim() || C.accent;   // the pulse glow has its own color; a page without the token keeps the accent
+    // one soft disc in the pulse color, scaled per heat point (a blur filter per frame would be the slow part)
     const s = 128, cv = document.createElement('canvas'); cv.width = cv.height = s;
     const c2 = cv.getContext('2d'), gr = c2.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-    gr.addColorStop(0, C.accent); gr.addColorStop(0.3, C.accent); gr.addColorStop(1, clear(C.accent));
+    gr.addColorStop(0, C.pulse); gr.addColorStop(0.3, C.pulse); gr.addColorStop(1, clear(C.pulse));
     c2.fillStyle = gr; c2.globalAlpha = 1; c2.fillRect(0, 0, s, s);
     heatSprite = cv;
   };
@@ -863,9 +864,9 @@ async function viewField(p) {
     const W = Math.max(600, wrap.clientWidth), H = Math.max(520, Math.min(860, innerHeight - wrap.getBoundingClientRect().top - 56));
     const svg = d3.select('#fsvg').attr('width', W).attr('height', H).attr('viewBox', [0, 0, W, H]).classed('fblobs', true);
     const defs = svg.append('defs');
-    // glows in the accent: around a circle (opaque at its edge, gone by 1.32 r) and around a dot
+    // glows in the pulse color: around a circle (opaque at its edge, gone by 1.32 r) and around a dot
     const grad = (id, stops) => defs.append('radialGradient').attr('id', id).selectAll('stop').data(stops).join('stop')
-      .attr('offset', s => s[0]).style('stop-color', 'var(--accent)').style('stop-opacity', s => s[1]);
+      .attr('offset', s => s[0]).style('stop-color', 'var(--pulse, var(--accent))').style('stop-opacity', s => s[1]);
     grad('bglow', [[0, 0.9], [0.8, 0.7], [0.9, 0.25], [1, 0]]);
     grad('bdglow', [[0, 0.85], [0.35, 0.55], [1, 0]]);
     const bg = svg.append('rect').attr('class', 'bbg').attr('width', W).attr('height', H).attr('fill', 'transparent');
@@ -1347,7 +1348,7 @@ async function viewField(p) {
     const svg = d3.select('#fsvg').classed('fblobs', true);
     const defs = svg.append('defs');
     const grad = (id, stops) => defs.append('radialGradient').attr('id', id).selectAll('stop').data(stops).join('stop')
-      .attr('offset', s => s[0]).style('stop-color', 'var(--accent)').style('stop-opacity', s => s[1]);
+      .attr('offset', s => s[0]).style('stop-color', 'var(--pulse, var(--accent))').style('stop-opacity', s => s[1]);
     grad('bglow', [[0, 0.9], [0.8, 0.7], [0.9, 0.25], [1, 0]]);
     grad('bdglow', [[0, 0.85], [0.35, 0.55], [1, 0]]);
     const bg = svg.append('rect').attr('class', 'bbg').attr('fill', 'transparent');
@@ -1795,11 +1796,12 @@ async function viewField(p) {
         // time poles carry none (earlier and later say it)
         { k: 'r', x: W - 14, y: H / 2, rot: 90, anchor: 'middle', text: across ? txt(terms[0], 0) : '↑ ' + txt(terms[0], 0) },
         { k: 'l', x: 14, y: H / 2, rot: -90, anchor: 'middle', text: across ? txt(terms[1], 1) : '↑ ' + txt(terms[1], 1) },
-        { k: 't', x: W / 2, y: 20, rot: 0, anchor: 'middle', text: '↑ ' + txt(terms[2], 2) },
+        { k: 't', x: W / 2, y: 21, rot: 0, anchor: 'middle', text: '↑ ' + txt(terms[2], 2) },
         { k: 'b', x: W / 2, y: H - (MT ? 26 : 10), rot: 0, anchor: 'middle', text: txt(terms[3], 3) + ' ↓' },
       ];
       const t = gPoles.selectAll('text').data(labels, d => d.k).join(e => e.append('text').style('opacity', 0));
-      t.attr('text-anchor', d => d.anchor).attr('transform', d => `translate(${d.x},${d.y}) rotate(${d.rot})`).classed('time', (d, i) => across && i < 2);
+      t.attr('text-anchor', d => d.anchor).attr('transform', d => `translate(${d.x},${d.y}) rotate(${d.rot})`).classed('time', (d, i) => across && i < 2)
+        .classed('tb', d => d.k === 't' || d.k === 'b');   // the top and bottom labels are set larger than the turned side ones
       t.each(function (d) { const el = d3.select(this); if (el.text() !== d.text) { el.text(d.text).style('opacity', 0).transition().duration(reduce ? 0 : 420).style('opacity', 1); } });
     }
     function poles() {

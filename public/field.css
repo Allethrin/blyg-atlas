@@ -1,5 +1,5 @@
 /* Field styles — loaded by index.html.
-   Uses the page's tokens: --bg --fg --mute --line --accent --soft --read. */
+   Uses the page's tokens: --bg --fg --mute --line --accent --soft --read, and --pulse for the pulse glow (the accent when it is not set). */
 /* field — the thicket as a plane */
 main.wide { max-width: none; padding: 12px 16px 40px; }
 .fbar { display:flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--mute); margin-bottom: 8px; }
@@ -121,6 +121,7 @@ body.ffull .fqfloat:not([hidden]) { display: inline-flex; position: fixed; top: 
 .bpoles { pointer-events: none; }
 .bpoles text { font: 13px ui-monospace, Menlo, monospace; fill: var(--mute); letter-spacing: .02em; paint-order: stroke; stroke: var(--bg); stroke-width: 3.5px; stroke-linejoin: round; }
 .bpoles text.time { fill: var(--accent); }
+.bpoles text.tb { font-size: 14px; }
 /* tour — the loupe at the bottom level */
 .bloupe { fill: var(--bg); fill-opacity: .25; stroke: var(--accent); stroke-opacity: .55; stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .bloupe.gap { fill: none; stroke-opacity: .35; stroke-dasharray: 3 4; }
