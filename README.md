@@ -90,6 +90,8 @@ Blogrolls connect blygs to blygs. Every blyg already in the atlas is re-checked 
 
 UMAP's axes mean nothing in themselves: "up" is not a subject. That is why the view is something you find by tilting, and why the rim labels are computed afterward from whatever items ended up at each edge.
 
+The layout keeps regions better than it keeps exact neighbors. On an atlas of about 8,000 items, about 3 of an item's 10 nearest neighbors on the map were among its 10 nearest in meaning. Two items drawn side by side are often not each other's closest relatives. A mark's shape block (below) reports this figure for your own atlas.
+
 **4. Regions are clusters in that layout.** k-means, at two levels: up to twelve themes clustered on the meaning directions alone, and inside each theme up to six scenes clustered on meaning and time together. Clustering in the layout, not in the original 768 dimensions, makes each region one contiguous place on the map.
 
 A region is named by the terms that carry the largest share of the difference between its word frequencies and the background's (the whole field for a theme, the theme for a scene). Lines that a single blyg repeats across many of its items are dropped first, so a byline or a boilerplate sentence does not outrank the subject. The score for a term is p_region · log(p_region / p_background), which passes over words that are common everywhere and picks out the ones that are common here.
@@ -112,6 +114,7 @@ The dashboard's other tabs, and the same things from the shell:
 - **Pulse**: what moved in a window, grouped into threads and weighted toward the blygs you actually read. This is a diff over timestamps, not a search. `blyg-atlas pulse --days 3`
 - **Queries**: standing queries. You declare a query in your own words; each run ranks what changed since you last looked against it; items you keep under a query widen what later runs can reach without changing how they are ranked. `blyg-atlas query add "…"`, `query run --all`
 - **Recent**, **map**: the newest items; the blygs the atlas holds, what it has seen but not crawled, and quotes whose source has changed since it was quoted.
+- **Marks**: lasso items on the Field and give the set a name and a note. A mark is tied to items, not positions, so it survives a new layout. Saving a mark computes its shape block: plain facts about the set, written by no model. The block covers which blygs and dates it spans, which regions it sits in, and whether it is a blob or a streak on the map. It checks whether that shape holds in the full embedding or comes from the flattening, and lists the links into and out of the set. Every number is shown next to what a random set of the same size scores. Under 12 items the block is a table of pairs instead. When the save card opens, the name field suggests the words that set the set apart, and Tab takes the suggestion. If you set a local Ollama model and write your own prompt (`marks` in `atlas.config.json`), the model offers a name and a note from the block and the member titles. No prompt ships with the atlas. An agent reads the block alongside the member texts; it can propose marks of its own, which stay dashed until you keep them. `blyg-atlas mark list`, `mark show <id>`
 - **History**: what you opened, when, and for how long. It never leaves the database. Pulse uses it to learn which blygs are your neighborhood.
 - `blyg-atlas thread <id|url>` shows what an item responds to and what responds to it, as far as your crawl reaches. `item`, `lineage`, `stale`, `frontier` and a read-only `sql` are there too.
 
@@ -127,7 +130,7 @@ The same tools are an [MCP](https://modelcontextprotocol.io) server on stdio:
 claude mcp add blyg --scope user -- npx tsx /PATH/TO/blyg-atlas/src/mcp.ts
 ```
 
-Fifteen tools: `blyg_crawl`, `blyg_search`, `blyg_item`, `blyg_thread`, `blyg_lineage`, `blyg_stale`, `blyg_frontier`, `blyg_map`, `blyg_recent`, `blyg_pulse`, `blyg_reads`, `blyg_queries`, `blyg_query_run`, `blyg_query_keep`, `blyg_sql`. Their descriptions are in `src/tools.ts`.
+Nineteen tools: `blyg_crawl`, `blyg_search`, `blyg_item`, `blyg_thread`, `blyg_lineage`, `blyg_stale`, `blyg_frontier`, `blyg_map`, `blyg_recent`, `blyg_pulse`, `blyg_reads`, `blyg_queries`, `blyg_query_run`, `blyg_query_keep`, `blyg_marks`, `blyg_mark`, `blyg_mark_propose`, `blyg_mark_note`, `blyg_sql`. Their descriptions are in `src/tools.ts`.
 
 ## Configuration
 

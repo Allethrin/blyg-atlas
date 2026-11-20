@@ -48,7 +48,7 @@ Write only the keys you are setting, for example `{ "port": 5056, "contact": "â€
 ## Then offer, don't assume
 
 - **A daily crawl.** `examples/` has a cron line and a launchd plist. Keep `crawl --wait 3600` there, so a job that fires before the network is up waits instead of failing, and add `--hops` if they chose one.
-- **The atlas as tools for you.** `npx tsx src/mcp.ts` is an MCP server on stdio with the same fifteen tools as the CLI (`README.md`, "From an AI assistant"). Registering it changes their assistant's configuration, so ask first.
+- **The atlas as tools for you.** `npx tsx src/mcp.ts` is an MCP server on stdio with the same nineteen tools as the CLI (`README.md`, "From an AI assistant"). Registering it changes their assistant's configuration, so ask first.
 - **Standing queries.** `npx blyg-atlas query add "â€¦"` in their own words; `query run --all` after each crawl.
 - **Paying the first search now.** `npx blyg-atlas search "anything"` once downloads the reranker, so their first search in the browser is quick.
 

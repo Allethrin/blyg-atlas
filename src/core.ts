@@ -130,6 +130,28 @@ export function openDb(dbPath: string = DB_PATH): Database.Database {
       kept_at TEXT NOT NULL, note TEXT,
       PRIMARY KEY (query_id, origin, item_id)
     );
+    -- Marks (marks.ts): sets of items the reader picked out on the map, with the reader's own name and note. Tied to
+    -- items, not coordinates, so a mark survives a new layout. Local, never published.
+    CREATE TABLE IF NOT EXISTS marks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL DEFAULT '', note TEXT,
+      made_by TEXT NOT NULL DEFAULT 'reader',   -- reader | agent
+      state TEXT NOT NULL DEFAULT 'kept',       -- kept | proposed (an agent's mark, until the reader keeps it)
+      view TEXT, gesture TEXT,                  -- the scene it was made in and the stroke (JSON, per reader)
+      created TEXT NOT NULL, updated TEXT NOT NULL,
+      shape TEXT, shape_key TEXT                -- the computed shape block (marks-shape.ts) and the key it was computed under
+    );
+    CREATE TABLE IF NOT EXISTS mark_members (
+      mark_id INTEGER NOT NULL REFERENCES marks(id),
+      origin TEXT NOT NULL, item_id TEXT NOT NULL, version INTEGER,   -- the version when it was marked
+      PRIMARY KEY (mark_id, origin, item_id)
+    );
+    CREATE TABLE IF NOT EXISTS mark_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mark_id INTEGER NOT NULL REFERENCES marks(id),
+      author TEXT NOT NULL DEFAULT 'reader',    -- reader | agent
+      text TEXT NOT NULL, at TEXT NOT NULL
+    );
   `);
   // Migrations for databases created before a column existed.
   const itemCols = (db.prepare(`PRAGMA table_info(items)`).all() as any[]).map(c => c.name);

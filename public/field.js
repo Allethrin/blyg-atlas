@@ -198,25 +198,7 @@ function cardMake(it, stack, x, y) {
     show(it2);
   };
   show(it);
-  const front = () => { el.style.zIndex = ++cardZ; };
-  el.addEventListener('pointerdown', front);
-  // the bar drags the card (not its buttons); kept on screen by at least its bar
-  const head = el.querySelector('.fchead');
-  head.addEventListener('pointerdown', ev => {
-    if (ev.target.closest('a') || ev.button !== 0) return;
-    ev.preventDefault(); head.setPointerCapture(ev.pointerId);
-    const r = el.getBoundingClientRect(), ox = ev.clientX - r.left, oy = ev.clientY - r.top;
-    const move = e => {
-      el.style.left = Math.max(40 - r.width, Math.min(innerWidth - 40, e.clientX - ox)) + 'px';
-      el.style.top = Math.max(0, Math.min(innerHeight - 28, e.clientY - oy)) + 'px';
-    };
-    const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); el.classList.remove('dragging'); };
-    el.classList.add('dragging');
-    head.addEventListener('pointermove', move); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
-  });
-  const fold = () => el.classList.toggle('min');
-  head.addEventListener('dblclick', ev => { if (!ev.target.closest('a')) fold(); });
-  el.querySelector('.fcmin').onclick = ev => { ev.preventDefault(); fold(); };
+  cardChrome(el);
   el.querySelector('.fcx').onclick = ev => { ev.preventDefault(); cardClose(card); };
   el.querySelector('.fcfull').onclick = ev => { ev.preventDefault(); const o = card.open; location.hash = itemHash(o.origin, o.id); };
   el.querySelector('.fcback').onclick = ev => { ev.preventDefault(); const prev = card.stack.pop(); if (prev) card.go(prev.origin, prev.id, 'trail', true); };
@@ -234,11 +216,197 @@ function cardMake(it, stack, x, y) {
   el.addEventListener('mouseleave', () => hov(false));
   return card;
 }
+// what every floating card shares: a press brings it to the front, its bar drags it (not the bar's buttons) and keeps
+// at least the bar on screen, double-click or – folds it to a tab
+function cardChrome(el) {
+  el.addEventListener('pointerdown', () => { el.style.zIndex = ++cardZ; });
+  const head = el.querySelector('.fchead');
+  head.addEventListener('pointerdown', ev => {
+    if (ev.target.closest('a, input, button') || ev.button !== 0) return;
+    ev.preventDefault(); head.setPointerCapture(ev.pointerId);
+    const r = el.getBoundingClientRect(), ox = ev.clientX - r.left, oy = ev.clientY - r.top;
+    const move = e => {
+      el.style.left = Math.max(40 - r.width, Math.min(innerWidth - 40, e.clientX - ox)) + 'px';
+      el.style.top = Math.max(0, Math.min(innerHeight - 28, e.clientY - oy)) + 'px';
+    };
+    const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); el.classList.remove('dragging'); };
+    el.classList.add('dragging');
+    head.addEventListener('pointermove', move); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
+  });
+  const fold = () => el.classList.toggle('min');
+  head.addEventListener('dblclick', ev => { if (!ev.target.closest('a')) fold(); });
+  el.querySelector('.fcmin').onclick = ev => { ev.preventDefault(); fold(); };
+}
 function cardClose(card) {
   const k = CARDS.indexOf(card);
   if (k >= 0) CARDS.splice(k, 1);
   card.gen++; card.el.remove();
   readerMark();
+}
+
+// ---------------------------------------------------------------- marks (Nov 19)
+// A mark is a set of items the reader picked out on the map, with their own name and note; the server keeps it and
+// computes its shape block (the facts an agent reads about its geometry) when it is saved. The lasso, the outlines and
+// the side-panel list live in viewField; the cards are here, because like the reader cards they outlive a re-render.
+// Agent proposals (state 'proposed') are drawn dashed until the reader keeps or discards them.
+let MARKS = null;   // /api/marks, reloaded whenever the field is drawn and after every change
+const MARK = { on: false, hl: null, hov: null, lift: new Set(), pending: null, pendingView: null, refresh: () => {}, go: null };
+const MCARDS = new Map();   // mark id → its open card
+async function marksLoad() { try { MARKS = (await api('/marks')).marks || []; } catch { MARKS = []; } return MARKS; }
+const markName = m => String((m && m.name) || '').trim() || 'untitled mark';
+const marksChanged = () => marksLoad().then(() => MARK.refresh());
+// the card that names a fresh lasso: `items` are field points, `gesture` and `view` go to the server as they are
+function markSaveCard(items, gesture, view, x, y, onDone) {
+  if (MARK.pending) MARK.pending.close();
+  const el = document.createElement('div');
+  el.className = 'fcard fmcard fmsave';
+  const n = items.length;
+  el.innerHTML = `<div class="fchead"><span class="fctitle">new mark · ${n} item${n === 1 ? '' : 's'}</span><a href="#" class="fcmin" title="fold to a tab">–</a><a href="#" class="fcx" title="cancel (Esc)">×</a></div>
+    <div class="frscroll"><input class="fmname" type="text" maxlength="160" placeholder="name">
+      <textarea class="fmnote" rows="3" placeholder="a note: what ties these together (optional)"></textarea>
+      <div class="fmlist small muted">${items.slice(0, 6).map(p => esc((p.title || '(untitled)').slice(0, 56))).join(' · ')}${n > 6 ? ` · +${n - 6} more` : ''}</div>
+      <div class="fmact"><button class="fmok">save</button><button class="fmno">cancel</button><span class="fmmsg small muted"></span></div>
+      <div class="fmhint small muted"></div></div>`;
+  const W0 = Math.min(330, innerWidth - 16);
+  el.style.width = W0 + 'px';
+  el.style.left = Math.max(4, Math.min(innerWidth - W0 - 4, x)) + 'px'; el.style.top = Math.max(4, Math.min(innerHeight - 260, y)) + 'px';
+  el.style.zIndex = ++cardZ;
+  cardsHost().appendChild(el);
+  cardChrome(el);
+  const close = () => { if (MARK.pending === me) MARK.pending = null; el.remove(); onDone && onDone(); };
+  const me = { el, close };
+  MARK.pending = me;
+  const $name = el.querySelector('.fmname'), $note = el.querySelector('.fmnote'), $msg = el.querySelector('.fmmsg'), $ok = el.querySelector('.fmok');
+  el.querySelector('.fcx').onclick = ev => { ev.preventDefault(); close(); };
+  el.querySelector('.fmno').onclick = close;
+  const save = async () => {
+    $ok.disabled = true; $msg.textContent = 'saving… (the shape block is computed now)';
+    try {
+      const r = await post('/marks', { name: $name.value.trim(), note: $note.value.trim(), members: items.map(p => ({ origin: p.origin, id: p.id })), view, gesture });
+      const box = el.getBoundingClientRect();
+      close();
+      await marksChanged();
+      if (r && r.mark && r.mark.id != null) markOpen(r.mark.id, box.left, box.top);
+    } catch (e) { $ok.disabled = false; $msg.textContent = e.message; }
+  };
+  $ok.onclick = save;
+  // Suggestions, grey in the empty field; Tab takes one. First the words that set the set apart (no model, at once), then,
+  // when the reader has set a local model and written a prompt (atlas.config.json `marks`), what that model offers.
+  const sug = { name: '', note: '' }, from = { name: '', note: '' }, $hint = el.querySelector('.fmhint');
+  let opts = [], at = 0;   // several names offered (the model's, then the words that set it apart): ↓/↑ in the empty field steps through them
+  let asking = '', why = '';   // asking: what is on its way ('qwen… for a note'); why: the model tier's reason for giving none
+  const hint = () => {
+    if (MARK.pending !== me) return;
+    const has = sug.name && sug.note ? 'name or note' : sug.name ? 'name' : sug.note ? 'note' : '';
+    $hint.textContent = [has && `Tab takes the suggested ${has} · ${from.note || from.name || 'the words that set it apart'}`, opts.length > 1 && `↓↑ for other names (${at + 1}/${opts.length})`, asking && `asking ${asking}…`, why].filter(Boolean).join(' · ');
+  };
+  const offer = (what, r) => {
+    if (MARK.pending !== me || !r || !r.text) return;
+    if (what === 'name' && r.options && r.options.length > 1) { opts = [...r.options, ...(sug.name && !from.name && !r.options.includes(sug.name) ? [sug.name] : [])]; at = 0; }
+    sug[what] = r.text; from[what] = r.model || '';
+    (what === 'name' ? $name : $note).placeholder = r.text;
+    // a long note suggestion would be cut off in three rows: the empty field grows to show it (up to eight)
+    if (what === 'note' && !$note.value) $note.rows = Math.max(3, Math.min(8, Math.ceil(r.text.length / 40)));
+    hint();
+  };
+  const take = ($f, what) => ev => { if (ev.key === 'Tab' && !ev.shiftKey && !$f.value && sug[what]) { ev.preventDefault(); $f.value = sug[what]; } };
+  $name.addEventListener('keydown', take($name, 'name'));
+  $name.addEventListener('keydown', ev => {
+    if ((ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') || $name.value || opts.length < 2) return;
+    ev.preventDefault();
+    at = (at + (ev.key === 'ArrowDown' ? 1 : opts.length - 1)) % opts.length;
+    sug.name = $name.placeholder = opts[at];
+    hint();
+  });
+  $note.addEventListener('keydown', take($note, 'note'));
+  (async () => {
+    const members = items.map(p => ({ origin: p.origin, id: p.id }));
+    try { offer('name', await post('/marks/suggest', { members, view, tier: 'terms' })); } catch { /* no suggestion */ }
+    let feat = null;
+    try { feat = await api('/features'); } catch { /* none */ }
+    if (!feat || !feat.mark_model) return;
+    for (const what of ['name', 'note']) {
+      if (MARK.pending !== me) return;   // closed or saved: ask nothing more
+      asking = `${feat.mark_model} for a ${what}`; hint();
+      let r = null;
+      try { r = await post('/marks/suggest', { members, view, tier: 'model', what }); } catch { /* keep what there is */ }
+      asking = '';
+      if (r && r.text) offer(what, r);
+      else if (r && r.reason && what === 'name' && !/^no (model|name prompt|note prompt)/.test(r.reason)) why = `${feat.mark_model} offers nothing: ${r.reason}`;   // an unwritten prompt is not news; a failure is   // the note's reason is the same story, said once
+      hint();
+    }
+  })();
+  $name.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); save(); } });
+  el.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } });
+  setTimeout(() => $name.focus(), 0);
+}
+// a mark's card: name and note (editable), the shape block, the members (click one to read it), the notes, and for an
+// agent's proposal keep / discard. Hovering the card brings its outline up on the map.
+function markOpen(id, x, y) {
+  const have = MCARDS.get(String(id));
+  if (have) { have.el.classList.remove('min'); have.el.style.zIndex = ++cardZ; have.load(); return; }
+  const el = document.createElement('div');
+  el.className = 'fcard fmcard';
+  el.innerHTML = `<div class="fchead"><span class="fctitle">mark</span><a href="#" class="fcmin" title="fold to a tab (or double-click the bar)">–</a><a href="#" class="fcx" title="close">×</a></div><div class="frscroll"><div class="frbody"><p class="spinner">loading…</p></div></div>`;
+  const W0 = Math.min(400, innerWidth - 16), H0 = Math.min(560, innerHeight - 16), k = MCARDS.size % 6;
+  el.style.width = W0 + 'px'; el.style.height = H0 + 'px';
+  const x0 = x ?? innerWidth - W0 - 300 - 24 * k, y0 = y ?? 80 + 28 * k;
+  el.style.left = Math.max(4, Math.min(innerWidth - W0 - 4, x0)) + 'px'; el.style.top = Math.max(4, Math.min(innerHeight - 60, y0)) + 'px';
+  el.style.zIndex = ++cardZ;
+  cardsHost().appendChild(el);
+  cardChrome(el);
+  let gen = 0;
+  const card = { el, load };
+  MCARDS.set(String(id), card);
+  const close = () => { gen++; MCARDS.delete(String(id)); el.remove(); if (MARK.hl === id) { MARK.hl = null; MARK.refresh(); } };
+  el.querySelector('.fcx').onclick = ev => { ev.preventDefault(); close(); };
+  el.addEventListener('mouseenter', () => { if (MARK.hl !== id) { MARK.hl = id; MARK.refresh(); } });
+  el.addEventListener('mouseleave', () => { if (MARK.hl === id) { MARK.hl = null; MARK.refresh(); } });
+  const body = el.querySelector('.frbody');
+  async function load() {
+    const my = ++gen;
+    let r;
+    try { r = await api('/mark/' + encodeURIComponent(id)); } catch (e) { if (my === gen) body.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+    if (my !== gen) return;
+    render(r);
+  }
+  function render(r) {
+    const m = r.mark || {}, members = r.members || [], notes = r.notes || [], prop = m.state === 'proposed';
+    let view = m.view ?? null;
+    if (typeof view === 'string') { try { view = JSON.parse(view); } catch { view = null; } }
+    el.querySelector('.fctitle').textContent = markName(m);
+    el.classList.toggle('prop', prop);
+    const CAP = 300;
+    body.innerHTML = `<div class="fmmeta small muted">${members.length} item${members.length === 1 ? '' : 's'} · ${m.made_by === 'agent' ? 'made by an agent' : 'yours'}${prop ? ' · <b>proposal</b>' : ''}${m.created ? ' · ' + fmtDate(m.created) : ''}</div>
+      ${prop ? `<div class="fmprop small">An agent proposed this mark. <button data-keep>keep</button><button data-discard>discard</button></div>` : ''}
+      <input class="fmname" type="text" maxlength="160" placeholder="name" value="${esc(m.name || '')}">
+      <textarea class="fmnote" rows="3" placeholder="note">${esc(m.note || '')}</textarea>
+      <div class="fmact"><button data-save disabled>save</button><button data-go title="${view ? 'back to the view it was made in (mode, level, plane, hidden blygs)' : 'fit the map to its members'}">go there</button><button data-del class="fmdel">delete</button><span class="fmmsg small muted"></span></div>
+      <details class="fmshape" open><summary>shape</summary><pre>${esc(r.shape_text || '(no shape block)')}</pre></details>
+      <details class="fmmembers" open><summary>members · ${members.length}</summary>${members.slice(0, CAP).map((x, j) => `<div class="fmm"><a href="#" data-j="${j}">${esc(x.title || '(untitled)')}</a> <span class="muted small">${esc(x.author || short(x.origin))}${x.created ? ' · ' + fmtDate(x.created) : ''}</span></div>`).join('')}${members.length > CAP ? `<div class="muted small">+${members.length - CAP} more</div>` : ''}</details>
+      <details class="fmnotes" open><summary>notes · ${notes.length}</summary>${notes.map(n => `<div class="fmn ${n.author === 'agent' ? 'agent' : ''}"><div class="small muted">${n.author === 'agent' ? 'agent' : 'you'}${n.at ? ' · ' + fmtWhen(n.at) : ''}</div><div class="fmnt">${esc(n.text || '')}</div></div>`).join('')}
+        <textarea class="fmadd" rows="2" placeholder="add a note"></textarea><button data-addnote>add note</button></details>`;
+    const $ = s => body.querySelector(s), $msg = $('.fmmsg'), $save = $('[data-save]');
+    const dirty = () => { $save.disabled = $('.fmname').value.trim() === (m.name || '').trim() && $('.fmnote').value.trim() === (m.note || '').trim(); };
+    $('.fmname').oninput = dirty; $('.fmnote').oninput = dirty;
+    const act = async (fn, msg) => { $msg.textContent = msg || ''; try { await fn(); } catch (e) { $msg.textContent = e.message; } };
+    $save.onclick = () => act(async () => { await post('/mark/' + encodeURIComponent(id), { name: $('.fmname').value.trim(), note: $('.fmnote').value.trim() }); await marksChanged(); await load(); });
+    $('[data-go]').onclick = () => {
+      if (!MARK.go) return;
+      MARK.go(view, members);
+      MARK.hl = id; MARK.refresh();
+      setTimeout(() => { if (MARK.hl === id && !el.matches(':hover')) { MARK.hl = null; MARK.refresh(); } }, 3000);
+    };
+    const del = () => act(async () => { await post('/mark/' + encodeURIComponent(id) + '/delete', {}); close(); await marksChanged(); });
+    $('[data-del]').onclick = () => { if (confirm(`Delete the mark "${markName(m)}"? Its notes go with it.`)) del(); };
+    if (prop) {
+      $('[data-keep]').onclick = () => act(async () => { await post('/mark/' + encodeURIComponent(id), { state: 'kept' }); await marksChanged(); await load(); });
+      $('[data-discard]').onclick = del;
+    }
+    body.querySelectorAll('.fmm a[data-j]').forEach(a => a.onclick = ev => { ev.preventDefault(); const x = members[Number(a.dataset.j)]; if (x) readerOpen(x.origin, x.id, 'mark'); });
+    $('[data-addnote]').onclick = () => { const t = $('.fmadd').value.trim(); if (t) act(async () => { await post('/mark/' + encodeURIComponent(id) + '/note', { text: t }); await load(); }); };
+  }
+  load();
 }
 addEventListener('hashchange', () => { const h = document.getElementById('fcards'); if (h) h.hidden = !location.hash.startsWith('#/field'); });
 addEventListener('keydown', ev => { if (ev.key === 'Escape' && READER.open && !(ev.target instanceof HTMLInputElement && ev.target.type !== 'range')) { ev.stopImmediatePropagation(); readerClose(); } }, true);
@@ -389,7 +557,10 @@ async function viewField(p) {
   const originRank = new Map(F.origins.map((o, i) => [o.origin, i]));
   const originColor = o => { const r = originRank.get(o); return r === undefined || r >= ORIGIN_COLORS.length ? '#9a938a' : ORIGIN_COLORS[r]; };
   const L = fieldState.layers;
-  const layerNames = (mode === 'plane' ? ['regions', 'cites', 'pulse'] : ['cites', 'pulse']).filter(k => OVERLAYS || k !== 'pulse');
+  if (!('marks' in L)) L.marks = true;   // layers added Nov 19: on unless turned off
+  if (!('notes' in L)) L.notes = true;   // the marks' notes, as glosses under their names
+  MARK.on = false;
+  const layerNames = (mode === 'plane' ? ['regions', 'cites', 'pulse', 'marks', 'notes'] : ['cites', 'pulse', 'marks', 'notes']).filter(k => OVERLAYS || k !== 'pulse');
   main.innerHTML = `<div class="field">
     <span class="fqchip fqfloat" data-qchip hidden></span>
     <div class="ffind" hidden><input type="search" placeholder="light up a theme on the map" autocomplete="off" aria-label="search the map"></div>
@@ -397,15 +568,17 @@ async function viewField(p) {
       ${MODES.length > 1 ? `<span class="fctl fmode">${MODES.map(m => `<a href="#" data-mode="${m}" class="${mode === m ? 'on' : ''}" title="${{ blobs: 'regions as circles you drill into', tour: 'the blobs in a slice of the 4D layout — move and tilt the plane through it', plane: 'every item on the UMAP plane' }[m]}">${m}</a>`).join('')}</span>` : ''}
       <span class="fqchip" data-qchip hidden></span>
       <span class="fctl">${layerNames.map(k => `<label><input type="checkbox" data-layer="${k}" ${L[k] ? 'checked' : ''}> ${k === 'cites' ? FW.edges : k}</label>`).join('')}</span>
+      <span class="fctl"><a href="#" data-lasso title="lasso: drag around some dots to mark them (key l; Esc cancels)">mark</a></span>
       <span class="fctl" ${OVERLAYS ? '' : 'hidden'}>pulse: ${[0, 1, 3, 7, 14].map(d => `<a href="#" data-days="${d}" class="${fieldState.days === d ? 'on' : ''}">${d ? d + 'd' : 'unseen'}</a>`).join('')}</span>
       <span class="fctl">color: ${['meaning', 'origin', 'age', 'read'].filter(c => OVERLAYS || c !== 'read').map(c => `<a href="#" data-color="${c}" class="${fieldState.color === c ? 'on' : ''}">${c}</a>`).join('')}</span>
       <span class="fstat muted">${F.n.toLocaleString()} ${FW.items} · ${topLevel.length} regions · ${F.edges.length} ${FW.edge} lines · laid out ${fmtWhen(F.built)}</span>
     </div>
-    ${mode === 'tour' ? '<div class="ftour" id="ftour"></div><div class="ffab" id="ffab"><button data-fab="find" title="search: light up a theme on the map (/)"><kbd>/</kbd> search</button><button data-fab="drift" title="let the plane wander on its own">drift</button><button data-fab="bare" title="hide or show the controls (h)">controls</button><button data-fab="exit" title="leave full screen (f, or Esc)">exit</button></div>' : ''}
+    ${mode === 'tour' ? '<div class="ftour" id="ftour"></div><div class="ffab" id="ffab"><button data-fab="find" title="search: light up a theme on the map (/)"><kbd>/</kbd> search</button><button data-fab="mark" title="lasso: drag around some dots to mark them (l)"><kbd>l</kbd> mark</button><button data-fab="drift" title="let the plane wander on its own">drift</button><button data-fab="bare" title="hide or show the controls (h)">controls</button><button data-fab="exit" title="leave full screen (f, or Esc)">exit</button></div>' : ''}
     ${mode !== 'plane' ? '<div class="bcrumb" id="fcrumb"></div>' : ''}
     <div class="fwrap">
       <div class="fsvgwrap"><canvas id="fcanvas" ${mode === 'plane' ? '' : 'hidden'}></canvas><svg id="fsvg"></svg><div id="ftip" class="ftip" hidden></div></div>
       <aside class="fside">
+        <div id="fmarks"></div>
         <div id="fscenes"></div>
         <div id="fregions"></div>
         <div id="forigins"></div>
@@ -427,7 +600,7 @@ async function viewField(p) {
   const clear = c => { const x = d3.color(c); if (!x) return 'rgba(0,0,0,0)'; x.opacity = 0; return x.formatRgb(); };   // the same hue, transparent (fading to transparent black greys a gradient)
   const readColors = () => {
     const cs = getComputedStyle(document.documentElement);
-    for (const v of ['bg', 'fg', 'mute', 'line', 'accent', 'soft', 'read']) C[v] = cs.getPropertyValue('--' + v).trim() || '#888';
+    for (const v of ['bg', 'fg', 'mute', 'line', 'accent', 'soft', 'read', 'mark']) C[v] = cs.getPropertyValue('--' + v).trim() || '#888';
     C.pulse = cs.getPropertyValue('--pulse').trim() || C.accent;   // the pulse glow has its own color; a page without the token keeps the accent
     // one soft disc in the pulse color, scaled per heat point (a blur filter per frame would be the slow part)
     const s = 128, cv = document.createElement('canvas'); cv.width = cv.height = s;
@@ -516,6 +689,150 @@ async function viewField(p) {
   let BUND = F.bundles;
   const rebund = () => { BUND = fieldState.hidden.size ? fieldAggregate(F.points, F.edges.filter(e => visible(F.points[e[0]]) && visible(F.points[e[1]]))) : F.bundles; };
   rebund();
+
+  // ---------------------------------------------------------------- marks: what the presentations share
+  // Each presentation answers drawn() (the item dots on screen now, in #fsvg's coordinates; null where the level draws
+  // none), view() (what brings the scene back), fit(idx) and marks() (redraw the outlines). A mark's members are matched
+  // to points by origin|id, not by the server's index, so a page holding an older field still finds them.
+  const KEYI = new Map(F.points.map(p => [p.origin + '|' + p.id, p.i]));
+  const markIdx = m => { if (!m._idx || m._of !== F) { m._idx = (m.members || []).map(x => KEYI.get(x.origin + '|' + x.id)).filter(i => i !== undefined); m._of = F; } return m._idx; };
+  const marksShown = () => L.marks !== false && MARKS && MARKS.length ? MARKS : [];
+  // A mark is drawn as a bubble (Ben, Nov 19: "little bubbles that kinda contain the ones they include"): the smooth
+  // contour of the field Σ rᵢ²/dᵢ² over its members — each place [x, y, r] alone is a disc of radius r, and near ones
+  // melt together as metaballs do — sampled on a coarse grid (~3k cells) and its rings smoothed. Members far apart give
+  // islands: that is where they are. The largest island carries the label.
+  const blobLine = d3.line().curve(d3.curveBasisClosed);
+  // Display only, a distortion on purpose: at the tour's bottom level a marked dot is drawn this share of the way toward
+  // its mark's middle, so the set reads as a set. Item positions, the layout, the lasso and every number about the mark
+  // are untouched; a dot in two marks takes the average of the two pulls. 0 turns it off.
+  const MARK_PULL = 0.2;
+  function markBlob(pl) {
+    if (!pl.length) return null;
+    if (pl.length > 400) { const st = Math.ceil(pl.length / 400); pl = pl.filter((_, j) => j % st === 0); }   // a huge mark: a sample shapes it
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, rmax = 0;
+    for (const [x, y, r] of pl) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); rmax = Math.max(rmax, r); }
+    const cell0 = Math.sqrt(((x1 - x0) + 4 * rmax) * ((y1 - y0) + 4 * rmax) / 3000);
+    // a disc much smaller than a cell would fall between the samples: on a wide, sparse mark the discs grow to the grid
+    const P = pl.map(([x, y, r]) => [x, y, Math.max(r, cell0 * 1.3)]);
+    const rm = d3.max(P, q => q[2]), pad = rm * 1.7;
+    x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+    const cell = Math.max(cell0, d3.min(P, q => q[2]) / 3);
+    const nx = Math.ceil((x1 - x0) / cell) + 2, ny = Math.ceil((y1 - y0) / cell) + 2;
+    if (nx * ny > 40000) return null;
+    const v = new Float32Array(nx * ny);
+    for (const [x, y, r] of P) {
+      const r2 = r * r, R = 5 * r;
+      const i0 = Math.max(0, Math.floor((x - R - x0) / cell)), i1 = Math.min(nx - 1, Math.ceil((x + R - x0) / cell));
+      const j0 = Math.max(0, Math.floor((y - R - y0) / cell)), j1 = Math.min(ny - 1, Math.ceil((y + R - y0) / cell));
+      for (let j = j0; j <= j1; j++) { const dy = y0 + j * cell - y, o = j * nx; for (let i = i0; i <= i1; i++) { const dx = x0 + i * cell - x; v[o + i] += r2 / (dx * dx + dy * dy + 1e-6 * r2); } }
+    }
+    const mp = d3.contours().size([nx, ny]).thresholds([1])(v)[0];
+    if (!mp || !mp.coordinates.length) return null;
+    const rings = [];
+    // d3.contours reads value i as the pixel [i, i+1]: a sample at x0 + i·cell sits at contour x i + ½
+    for (const poly of mp.coordinates) { const ring = poly[0].slice(0, -1).map(([gx, gy]) => [x0 + (gx - 0.5) * cell, y0 + (gy - 0.5) * cell]); if (ring.length >= 3) rings.push(ring); }
+    if (!rings.length) return null;
+    let main = rings[0], ma = -1;
+    for (const r of rings) { const a = Math.abs(d3.polygonArea(r)); if (a > ma) { ma = a; main = r; } }
+    const b = { x0: d3.min(main, q => q[0]), y0: d3.min(main, q => q[1]), x1: d3.max(main, q => q[0]), y1: d3.max(main, q => q[1]), cx: d3.mean(main, q => q[0]), cy: d3.mean(main, q => q[1]), area: ma };
+    return { d: rings.map(r => blobLine(r)).join(''), b };
+  }
+  // The words (Ben: "the text could look nicer, and kinda laid on/in the mark … I want to be able to scan all the notes
+  // just looking at it"): the name in spaced capitals, the note under it as a short italic gloss (two lines; all of it
+  // while the label is hovered). Laid inside the bubble's upper part when the bubble holds them, over it when it does
+  // not; then nudged apart, the biggest marks keeping their places. Sizes in screen px; positions in the drawing's own
+  // units, under a zoom zk.
+  const MARK_TYPE = { name: 10.5, nameW: 8.3, nameH: 15, note: 11.5, noteW: 5.7, noteH: 14.5, gloss: 46, glossLines: 2, full: 54, fullLines: 14 };
+  function wrapLines(s, n, max) {
+    const out = [];
+    let line = '';
+    for (const w of s.split(/\s+/).filter(Boolean)) {
+      if (line && (line + ' ' + w).length > n) { out.push(line); line = w; } else line = line ? line + ' ' + w : w;
+      if (out.length === max) break;
+    }
+    if (out.length < max && line) out.push(line);
+    const all = s.split(/\s+/).filter(Boolean).join(' ').length, shown = out.join(' ').length;
+    if (shown < all && out.length) { let last = out[out.length - 1]; if (last.length > n - 1) last = last.slice(0, n - 1).replace(/\s+\S*$/, ''); out[out.length - 1] = last.replace(/[,.;:—–-]*$/, '') + '…'; }
+    return out;
+  }
+  const markOn = m => MARK.hl === m.id || MARK.hov === m.id;   // hovered, or its card or row is
+  // top: the view's upper edge, in screen px of the drawing (a label flips under its mark there); keep: boxes to stay off
+  // ({ x: centre, y: top, w, h }, screen px of the drawing): the circles' own names
+  function markLabels(rows, zk, top, keep = []) {
+    const T = MARK_TYPE, placed = [...keep], out = [];
+    for (const r of [...rows].sort((a, b) => (b.lb || b.blob.b).area - (a.lb || a.blob.b).area)) {
+      const b = r.lb || r.blob.b, m = r.m, open = MARK.hov === m.id;
+      const name = markName(m).toUpperCase();
+      const note = L.notes !== false && m.note ? String(m.note).trim() : '';
+      const lines = [{ t: name, c: 'mn', h: T.nameH }];
+      // round a whole circle (above the bottom level) the circle's own name is inside it: the mark's words go outside, one line of gloss
+      if (note) for (const t of wrapLines(note, open ? T.full : T.gloss, open ? T.fullLines : r.ring ? 1 : T.glossLines)) lines.push({ t, c: 'mt', h: T.noteH });
+      const w = Math.max(name.length * T.nameW, ...lines.slice(1).map(q => q.t.length * T.noteW)), h = d3.sum(lines, q => q.h);
+      const ws = (b.x1 - b.x0) * zk, hs = (b.y1 - b.y0) * zk;
+      const inside = !r.ring && hs >= Math.min(h, T.nameH + 2 * T.noteH) + 26 && ws >= Math.min(w, 150) + 18;
+      let ax = b.cx * zk, ay = inside ? b.y0 * zk + 14 : b.y0 * zk - h - 3;
+      if (!inside && top !== undefined && ay < top + 4) ay = b.y1 * zk + 4;   // no room above (the top of the view): under it
+      // the nearest free spot: up and down in 13 px steps, then sideways
+      const clash = (dx, dy) => (top !== undefined && ay + dy < top + 2) || placed.some(p => Math.abs(p.x - ax - dx) < (p.w + w) / 2 + 8 && ay + dy < p.y + p.h + 4 && ay + dy + h > p.y - 4);
+      let dx = 0, dy = 0;
+      if (clash(0, 0)) {
+        let best = null;
+        for (const cx of [0, -1, 1, -2, 2]) for (let k = -8; k <= 8; k++) {
+          const ox = cx * (w / 2 + 30), oy = k * 13, cost = Math.abs(ox) * 0.7 + Math.abs(oy);
+          if ((!best || cost < best[2]) && !clash(ox, oy)) best = [ox, oy, cost];
+        }
+        if (best) [dx, dy] = best;
+      }
+      ax += dx;
+      placed.push({ x: ax, y: ay + dy, w, h });
+      let y = 0;
+      for (const q of lines) { y += q.h; q.y = y - 4; }
+      out.push({ r, x: ax / zk, y: (ay + dy) / zk, lines, inside, w, h, open });
+    }
+    return out;
+  }
+  // the gradient every bubble is filled with (bounding-box units, so one serves all)
+  function markDefs(defs) {
+    const gr = defs.append('radialGradient').attr('id', 'fmarkfill').attr('cx', '50%').attr('cy', '45%').attr('r', '62%');
+    gr.selectAll('stop').data([[0, 0.2], [0.65, 0.12], [1, 0.07]]).join('stop').attr('offset', s => s[0]).style('stop-color', 'var(--mark)').style('stop-opacity', s => s[1]);
+  }
+  // The SVG drawing (tour and blobs): the bubbles into gB (under the dots at the bottom level), the labels into gL, each
+  // keyed by mark and updated in place. `places(m)` in the group's units; `redraw` asks the presentation for a frame.
+  function drawMarkSvg(gB, gL, places, zk, redraw, top = 0, keep = []) {
+    const rows = [];
+    for (const m of marksShown()) {
+      const pl = places(m), blob = markBlob(pl);
+      if (!blob) continue;
+      // under the loupe the dots (and so the bubble) move; the label is laid on the bubble as it is without the loupe
+      const moved = pl.some(q => q.length > 3 && (q[3] !== q[0] || q[4] !== q[1]));
+      const still = moved ? markBlob(pl.map(q => [q[3], q[4], q[2]])) : null;
+      rows.push({ m, blob, lb: still ? still.b : blob.b, ring: !!pl.ring });
+    }
+    const key = r => String(r.m.id);
+    const state = (sel, r) => sel.classed('prop', d => r(d).m.state === 'proposed').classed('on', d => markOn(r(d).m)).classed('lift', d => MARK.lift.has(r(d).m.id));
+    state(gB.selectAll('path.fmb').data(rows, key).join('path').attr('class', 'fmb').attr('d', r => r.blob.d), r => r).classed('ring', r => r.ring);
+    const labs = markLabels(rows, zk, top, keep);
+    const lg = gL.selectAll('g.fml').data(labs, l => key(l.r)).join(e => {
+      const g2 = e.append('g').attr('class', 'fml');
+      g2.append('rect').attr('class', 'fmplate');
+      g2.append('text');
+      g2.on('click', (ev, l) => { ev.stopPropagation(); markOpen(l.r.m.id); })
+        .on('mouseenter', (ev, l) => { MARK.hov = l.r.m.id; redraw(true); })
+        .on('mouseleave', (ev, l) => { if (MARK.hov === l.r.m.id) { MARK.hov = null; redraw(true); } });
+      return g2;
+    });
+    state(lg, l => l.r).classed('in', l => l.inside).attr('transform', l => `translate(${l.x.toFixed(1)},${l.y.toFixed(1)}) scale(${(1 / zk).toFixed(4)})`);
+    lg.select('rect').attr('x', l => -l.w / 2 - 10).attr('y', -4).attr('width', l => l.w + 20).attr('height', l => l.h + 11).attr('rx', 7);
+    lg.select('text').each(function (l) {
+      d3.select(this).selectAll('tspan').data(l.lines).join('tspan').attr('class', q => q.c).attr('x', 0).attr('y', q => q.y).text(q => q.t);
+    });
+  }
+  // the marks a dot belongs to, lifted while it is hovered
+  function markLift(i, redraw) {
+    const ids = i === null ? [] : marksShown().filter(m => markIdx(m).includes(i)).map(m => m.id);
+    if (ids.length === MARK.lift.size && ids.every(id => MARK.lift.has(id))) return;
+    MARK.lift = new Set(ids); redraw();
+  }
 
   // ================================================================ PLANE
   function fieldPlane() {
@@ -754,6 +1071,37 @@ async function viewField(p) {
         ctx.beginPath(); ctx.arc(d.px, d.py, r, 0, TAU); ctx.fill(); ctx.stroke();
       }
 
+      // marks: each a bubble round its visible members (a soft radial fill, a thin rim, dashed for an agent's proposal),
+      // its name and the gloss of its note laid over it — the SVG presentations' drawing, on the canvas
+      const rows = [];
+      for (const m of marksShown()) {
+        const pts = markIdx(m).map(i => F.points[i]).filter(visible);
+        const blob = pts.length ? markBlob(pts.map(d => [d.px, d.py, d.rb * rk + 9 / k])) : null;
+        if (blob && inView([blob.b.x0, blob.b.y0, blob.b.x1, blob.b.y1])) rows.push({ m, blob });
+      }
+      const mc = d3.color(C.mark), mcA = a => { const c = mc.copy(); c.opacity = a; return c.formatRgb(); };
+      for (const { m, blob } of rows) {
+        const on = markOn(m), path = new Path2D(blob.d), b = blob.b, R = Math.max(b.x1 - b.x0, b.y1 - b.y0) * 0.62;
+        const gr = ctx.createRadialGradient(b.cx, b.cy - (b.y1 - b.y0) * 0.05, 0, b.cx, b.cy, R);
+        gr.addColorStop(0, mcA(on ? 0.3 : 0.2)); gr.addColorStop(0.65, mcA(on ? 0.2 : 0.12)); gr.addColorStop(1, mcA(on ? 0.12 : 0.07));
+        ctx.globalAlpha = 1; ctx.fillStyle = gr; ctx.fill(path);
+        ctx.strokeStyle = mcA(on ? 0.9 : 0.5); ctx.lineWidth = (on ? 1.4 : 1) / k;
+        ctx.setLineDash(m.state === 'proposed' ? [2.5 / k, 3 / k] : []); ctx.stroke(path); ctx.setLineDash([]);
+      }
+      for (const l of markLabels(rows, k, -t.y)) {
+        ctx.save(); ctx.translate(l.x, l.y); ctx.scale(1 / k, 1 / k);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+        for (const q of l.lines) {
+          const nm = q.c === 'mn';
+          ctx.font = nm ? `600 ${MARK_TYPE.name}px Georgia, serif` : `italic ${MARK_TYPE.note}px Georgia, serif`;
+          if ('letterSpacing' in ctx) ctx.letterSpacing = nm ? '1.7px' : '0px';
+          ctx.globalAlpha = 0.9; ctx.lineWidth = 3.2; ctx.strokeStyle = C.bg; ctx.strokeText(q.t, 0, q.y);
+          ctx.globalAlpha = 1; ctx.fillStyle = nm ? C.mark : C.fg; ctx.fillText(q.t, 0, q.y);
+        }
+        if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+        ctx.restore();
+      }
+
       // hover: the point's own lines, at any level, and a soft halo
       if (hov >= 0) {
         const d = F.points[hov], r = d.rb * rk;
@@ -853,7 +1201,17 @@ async function viewField(p) {
       hits: pts => { restyle(); if (pts.length) zoomToPoints(pts); },
       scene: d => { zoomToPoints([d], 5); flash(d); },
       region: c => zoomToCluster(c),
-      start: hasQ => { if (!hasQ && fieldState.focus && byPath.get(fieldState.focus)) { zoomToCluster(byPath.get(fieldState.focus)); fieldState.focus = ''; } },
+      start: hasQ => {
+        const pv = MARK.pendingView;   // a mark's "go there" from another mode: its zoom
+        if (pv && pv.mode === 'plane' && pv.t) { MARK.pendingView = null; svg.call(zoom.transform, d3.zoomIdentity.translate(pv.t.x, pv.t.y).scale(pv.t.k)); return; }
+        if (!hasQ && fieldState.focus && byPath.get(fieldState.focus)) { zoomToCluster(byPath.get(fieldState.focus)); fieldState.focus = ''; }
+      },
+      // marks: every visible point is drawn here, so every one can be lassoed
+      drawn: () => { const out = []; for (const d of F.points) if (visible(d)) out.push({ i: d.i, x: d.px * k + t.x, y: d.py * k + t.y }); return out; },
+      view: () => ({ mode: 'plane', hash: '#/field', t: { x: +t.x.toFixed(2), y: +t.y.toFixed(2), k: +k.toFixed(4) } }),
+      go: v => { if (v.t) svg.transition().duration(650).ease(d3.easeCubicInOut).call(zoom.transform, d3.zoomIdentity.translate(v.t.x, v.t.y).scale(v.t.k)); },
+      fit: idx => { const pts = idx.map(i => F.points[i]).filter(visible); if (pts.length) zoomToPoints(pts, 8); },
+      marks: requestDraw,
     };
   }
 
@@ -871,7 +1229,36 @@ async function viewField(p) {
     grad('bdglow', [[0, 0.85], [0.35, 0.55], [1, 0]]);
     const bg = svg.append('rect').attr('class', 'bbg').attr('width', W).attr('height', H).attr('fill', 'transparent');
     const gScenes = svg.append('g');
-    const GAP = 40;                      // the least room between two circles, so every ribbon has some length to show
+    // marks over the scenes: at the bottom round their dots, above it round the circles that hold their members
+    const gMarks = svg.append('g').attr('class', 'fmarks'), gMB = gMarks.append('g'), gML = gMarks.append('g');
+    markDefs(defs);
+    let marksRaf = 0;
+    function marksSoon() {
+      if (marksRaf) return;
+      marksRaf = requestAnimationFrame(() => {
+        marksRaf = 0;
+        if (stale(g) || !svg.node().isConnected) return;
+        if (animating || !cur) { gMarks.attr('display', 'none'); setTimeout(marksSoon, 120); return; }   // a move between levels: after it lands
+        gMarks.attr('display', null);
+        const bottom = cur.kind === 'items' && cur.gUnder;
+        if (bottom) gMB.selectAll('*').remove();
+        const ringN = new Map();
+        drawMarkSvg(bottom ? cur.gUnder : gMB, gML, m => {
+          const out = [], seen = new Set();
+          if (cur.kind === 'items') { for (const i of markIdx(m)) { const d = cur.lay.byI.get(i); if (d) out.push([d.x, d.y, d.dr + 9]); } return out; }
+          const at = new Map(cur.lay.nodes.map(d => [d.path, d]));
+          for (const i of markIdx(m)) {
+            const p = F.points[i];
+            if (!visible(p)) continue;
+            const path = cur.path ? (parentOf(p.c) === cur.path ? p.c : null) : parentOf(p.c), d = path && at.get(path);
+            if (!d || seen.has(path)) continue;
+            seen.add(path); const k = ringN.get(path) || 0; ringN.set(path, k + 1); out.push([d.x, d.y, d.r * d.s + 6 + 5 * k]); out.ring = true;
+          }
+          return out;
+        }, 1, marksSoon, 0, cur.kind === 'items' ? [] : cur.lay.nodes.filter(d => d.r >= 15).map(d => ({ x: d.x, y: d.y - 26, w: Math.min(d.r * 1.72, 190), h: 52 })));
+      });
+    }
+    const GAP = 40;                    // the least room between two circles, so every ribbon has some length to show
     const PREV = 0.84;                   // a circle's preview fills this share of its radius
     const parentPath = path => path.includes('.') ? path.slice(0, path.indexOf('.')) : '';
     const hashFor = path => path ? '#/field?c=' + path : '#/field';
@@ -1136,6 +1523,7 @@ async function viewField(p) {
 
       st.tick = () => {
         node.attr('transform', d => `translate(${d.x.toFixed(1)},${d.y.toFixed(1)})${d.s !== 1 ? ` scale(${d.s})` : ''}`);
+        marksSoon();
         if (!L.cites) return;
         rib.each(function (l) { const gm = ribGeom(l); l.gm = gm; this.setAttribute('d', gm ? gm.d : ''); });
         // a count where there's room: not over a circle, not on top of a heavier ribbon's count
@@ -1169,6 +1557,7 @@ async function viewField(p) {
     function buildItems(st) {
       const { lay, scene } = st;
       scene.append('circle').attr('class', 'bcont').attr('cx', lay.cx).attr('cy', lay.cy).attr('r', lay.R0);
+      st.gUnder = scene.append('g').attr('class', 'fmarks');   // the marks' bubbles, under the lines and the dots
       if (!lay.dots.length) { scene.append('text').attr('class', 'bempty').attr('x', W / 2).attr('y', H / 2).attr('text-anchor', 'middle').text(`nothing visible here — every ${FW.origin} in it is hidden`); return; }
       const byI = lay.byI;
       const lines = [], ext = new Map();
@@ -1249,7 +1638,7 @@ async function viewField(p) {
       return st;
     }
     const retire = st => { if (!st) return; st.sim && st.sim.stop(); st.scene.interrupt().transition().duration(FADE).style('opacity', 0).remove(); };
-    const land = st => { cur = st; crumbs(st); renderRegions(); if (pendingFlash !== null) { const i = pendingFlash; pendingFlash = null; setTimeout(() => flashAt(i), 60); } };
+    const land = st => { cur = st; crumbs(st); renderRegions(); marksSoon(); if (pendingFlash !== null) { const i = pendingFlash; pendingFlash = null; setTimeout(() => flashAt(i), 60); } };
 
     function go(path, how) {
       path = levelFor(path).path;
@@ -1300,7 +1689,7 @@ async function viewField(p) {
     bg.on('click', () => { if (cur && cur.path && !animating) location.hash = hashFor(parentPath(cur.path)); });
     const onKey = ev => {
       if (stale(g) || !svg.node().isConnected) { document.removeEventListener('keydown', onKey); return; }
-      if (ev.key === 'Escape' && cur && cur.path && !(ev.target instanceof HTMLInputElement)) location.hash = hashFor(parentPath(cur.path));
+      if (ev.key === 'Escape' && cur && cur.path && !(ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement)) location.hash = hashFor(parentPath(cur.path));
     };
     document.addEventListener('keydown', onKey);
     const onVis = () => { if (stale(g)) { document.removeEventListener('visibilitychange', onVis); return; } if (cur && cur.sim && !reduce) { if (document.hidden) cur.sim.stop(); else cur.sim.restart(); } };
@@ -1321,6 +1710,14 @@ async function viewField(p) {
       region: c => navTo(c.path),
       start: () => { fieldState.focus = ''; go(p.get('c') || ''); },
       current: () => cur ? cur.path : '',
+      // marks: only the bottom level draws item dots; above it the lasso says to go in
+      drawn: () => cur && cur.kind === 'items' && !animating ? cur.lay.dots.map(d => ({ i: d.i, x: d.x, y: d.y })) : null,
+      view: () => ({ mode: 'blobs', hash: hashFor(cur ? cur.path : ''), path: cur ? cur.path : '' }),
+      fit: idx => {
+        const cs = [...new Set(idx.map(i => F.points[i].c))], tops = [...new Set(cs.map(parentOf))];
+        navTo(cs.length === 1 ? cs[0] : tops.length === 1 ? tops[0] : '');
+      },
+      marks: marksSoon,
     };
   }
 
@@ -1377,6 +1774,48 @@ async function viewField(p) {
     // the pinch zoom is a transform on everything drawn (gZoom); the levels themselves never know about it
     const gZoom = svg.append('g');
     const gScenes = gZoom.append('g');
+    // marks, under the pinch zoom. At the bottom a bubble lies under the dots it holds (the scene's own gUnder), where
+    // they sit now (lens, pull and all); above it a bubble goes round the dots a leaf circle shows of the members, or
+    // round the circle that holds them. Members outside the slab or the time window (weight < 0.1) are left out, as
+    // their dots are. The names and notes are over everything.
+    const gMarks = gZoom.append('g').attr('class', 'fmarks'), gMB = gMarks.append('g'), gML = gMarks.append('g');
+    markDefs(defs);
+    let marksRaf = 0;
+    function marksSoon() {
+      if (marksRaf) return;
+      marksRaf = requestAnimationFrame(() => {
+        marksRaf = 0;
+        if (stale(g) || !svg.node().isConnected) return;
+        if (animating || !cur) { gMarks.attr('display', 'none'); setTimeout(marksSoon, 120); return; }
+        gMarks.attr('display', null);
+        const zk = ZT.k, lvl = cur.path ? cur.path.split('.').length : 0;
+        const at = cur.nodes ? new Map(cur.nodes.map(d => [d.path, d])) : null;
+        const bottom = cur.kind === 'items' && cur.gUnder;
+        if (bottom) gMB.selectAll('*').remove();
+        const ringN = new Map();   // circle → how many marks already ring it (each next one a step further out)
+        drawMarkSvg(bottom ? cur.gUnder : gMB, gML, m => {
+          const out = [], seen = new Set();
+          if (cur.kind === 'items') {
+            for (const i of markIdx(m)) { const d = cur.byI && cur.byI.get(i); if (d && d.w >= 0.1) out.push([d.x, d.y, (d.rr || d.dr) + 9 / zk, d.ux ?? d.x, d.uy ?? d.y]); }
+            return out;
+          }
+          for (const i of markIdx(m)) {
+            if (!(WT[i] >= 0.1)) continue;
+            const anc = ancestors(cOf(F.points[i]));
+            if (lvl && anc[lvl - 1] !== cur.path) continue;
+            const d = at && at.get(anc[lvl]);
+            if (!d || d.r < 3) continue;
+            const pd = d.pdotBy && d.pdotBy.get(i);
+            if (pd) out.push([d.x + pd[0], d.y + pd[1], 5 / zk]);
+            // a circle that shows no dots: the mark rings it, just outside its edge
+            else if (!d.pdotBy && !seen.has(d.path)) { seen.add(d.path); const k = ringN.get(d.path) || 0; ringN.set(d.path, k + 1); out.push([d.x, d.y, d.r + (6 + 5 * k) / zk]); out.ring = true; }
+          }
+          return out;
+        }, zk, full => { if (full && cur && cur.hover) cur.hover(); marksSoon(); }, -ZT.y,
+          [...(cur.nodes || []).filter(d => d.r >= 18).map(d => ({ x: d.x * zk, y: (d.y - 28) * zk, w: Math.min(d.r * 1.72, 190) * zk, h: 66 * zk })),   // the circles' names
+           { x: W / 2 - ZT.x, y: 4 - ZT.y, w: 440, h: 24 }, { x: W / 2 - ZT.x, y: H - 44 - ZT.y, w: 440, h: 26 }]);   // the poles, top and bottom
+      });
+    }
     // rim labels: what each direction of the plane means right now (poles), drawn outside the zoom so a pinch leaves them
     const gPoles = svg.append('g').attr('class', 'bpoles').attr('display', L.poles === false ? 'none' : null);
     const GAP = 24, PREV = 0.84, DEG = Math.PI / 180, N = F.points.length;
@@ -1873,6 +2312,7 @@ async function viewField(p) {
     // the miniature of a circle's insides, under the same slab: sub-region circles, or (above a leaf) its items as dots
     function previewNode(sel, d) {
       const gp = sel.append('g').attr('class', 'bprev');
+      d.pdots = null; d.pdotBy = null;   // a leaf's dots, kept for the lasso and the marks: [i, x, y] around the circle's centre
       if (d.r < 14 || d.w < 0.05) return;
       const wm = idx => { let w = 0, x = 0, y = 0; for (const i of idx) { w += WT[i]; x += WT[i] * PX[i]; y += WT[i] * PY[i]; } return { w, x: w ? x / w : 0, y: w ? y / w : 0 }; };
       if (d.c.children.length) {
@@ -1887,9 +2327,10 @@ async function viewField(p) {
         const rad = live.map(i => Math.hypot(PX[i] - d.wx, PY[i] - d.wy)).sort((a, b) => a - b);
         const s = 0.82 * d.r / (rad[Math.floor(rad.length * 0.9)] || rad[rad.length - 1] || 1);
         const dr = Math.max(0.8, Math.min(2.4, d.r / 40));
-        gp.selectAll('circle').data(live).join('circle').attr('class', 'dot').attr('r', dr).style('fill', i => fillOf(F.points[i])).style('fill-opacity', i => 0.2 + 0.6 * WT[i])
-          .attr('cx', i => { const dx = (PX[i] - d.wx) * s, dy = -(PY[i] - d.wy) * s, m = Math.hypot(dx, dy), mx = d.r * 0.9; return m > mx ? dx * mx / m : dx; })
-          .attr('cy', i => { const dx = (PX[i] - d.wx) * s, dy = -(PY[i] - d.wy) * s, m = Math.hypot(dx, dy), mx = d.r * 0.9; return m > mx ? dy * mx / m : dy; });
+        const pos = live.map(i => { const dx = (PX[i] - d.wx) * s, dy = -(PY[i] - d.wy) * s, m = Math.hypot(dx, dy), mx = d.r * 0.9; return m > mx ? [i, dx * mx / m, dy * mx / m] : [i, dx, dy]; });
+        d.pdots = pos; d.pdotBy = new Map(pos.map(q => [q[0], [q[1], q[2]]]));
+        gp.selectAll('circle').data(pos).join('circle').attr('class', 'dot').attr('r', dr).style('fill', q => fillOf(F.points[q[0]])).style('fill-opacity', q => 0.2 + 0.6 * WT[q[0]])
+          .attr('cx', q => q[1]).attr('cy', q => q[2]);
       }
     }
     // an arrow between two circles, from the cited region to the citing one (the way ideas travel; Ben, Oct 23: "these citations are directed …
@@ -1955,13 +2396,13 @@ async function viewField(p) {
       const gLD = scene.append('g').attr('class', 'bldots');
       const ring = scene.append('circle').attr('class', 'bloupe').attr('display', 'none');
       const gBub = scene.append('g').attr('class', 'bbubs');
-      const gapLoupe = () => L.loupe !== false && !animating && cur === st && !!FOC && !!st.gapOn;
+      const gapLoupe = () => L.loupe !== false && !MARK.on && !animating && cur === st && !!FOC && !!st.gapOn;
       const GAP_R = 88, GAP_N = 4;   // smaller and quieter than the bottom level's (Ben: "slightly smaller/more minimal")
       ring.classed('gap', true);
       const bubbles = makeBubbles(gBub, gapLoupe, { R: GAP_R, BR: 80 });
       const LD = new Map();   // item → its dot object, reused so the text circles keep their state
       st.hover = () => {
-        st.gapOn = L.loupe !== false && !animating && cur === st && !!FOC && !!st.xf && !nodes.some(d => d.r >= 3 && Math.hypot(d.x - FOC[0], d.y - FOC[1]) <= d.r + 2);
+        st.gapOn = L.loupe !== false && !MARK.on && !animating && cur === st && !!FOC && !!st.xf && !nodes.some(d => d.r >= 3 && Math.hypot(d.x - FOC[0], d.y - FOC[1]) <= d.r + 2);
         ring.attr('display', st.gapOn ? null : 'none');
         if (!st.gapOn) { gLD.selectAll('*').remove(); bubbles.clear(); return; }
         const zk = ZT.k, rl = GAP_R / zk, { cx: ox, cy: oy, scale } = st.xf;
@@ -2173,6 +2614,7 @@ async function viewField(p) {
       };
       st.tick = () => {
         node.attr('transform', d => `translate(${d.x.toFixed(1)},${d.y.toFixed(1)})`);
+        marksSoon();
         if (!L.cites) return;
         rib.each(function (a) { const gm = arrowGeom(a); a.gm = gm; this.firstChild.setAttribute('d', gm ? gm.d : ''); this.lastChild.setAttribute('d', gm ? gm.h : ''); });
         const placed = [];
@@ -2338,6 +2780,7 @@ async function viewField(p) {
       const { scene } = st;
       const R0 = Math.min(W, H) / 2 - 18, cx = W / 2, cy = H / 2;
       scene.append('circle').attr('class', 'bcont').attr('cx', cx).attr('cy', cy).attr('r', R0);
+      st.gUnder = scene.append('g').attr('class', 'fmarks');   // the marks' bubbles, under the lines and the dots
       const idx = (members.get(st.path) || []).filter(i => visible(F.points[i]));
       if (!idx.length) { scene.append('text').attr('class', 'bempty').attr('x', W / 2).attr('y', H / 2).attr('text-anchor', 'middle').text(`nothing visible here — every ${FW.origin} in it is hidden`); st.update = () => {}; st.tick = () => {}; return; }
       const base = Math.max(3, Math.min(7, 0.2 * R0 / Math.sqrt(idx.length)));
@@ -2410,9 +2853,9 @@ async function viewField(p) {
       const dot = gd.selectAll('circle').data(dots, d => d.i).join('circle')
         .attr('class', d => 'bdot' + (d.p.reads ? ' read' : '') + (HITS && HITS.has(d.i) ? ' hit' : '') + (readerIsOpen(d.p) ? ' fopen' : '')).attr('r', d => d.dr).attr('fill', d => fillOf(d.p));
       const mine = d => l => l.a === d || l.b === d;
-      dot.on('mouseenter', (ev, d) => { gl.classed('hov', true); line.classed('on', mine(d)).filter(mine(d)).raise(); d3.select(ev.currentTarget).classed('hov', true); holdV(d); })
+      dot.on('mouseenter', (ev, d) => { gl.classed('hov', true); line.classed('on', mine(d)).filter(mine(d)).raise(); d3.select(ev.currentTarget).classed('hov', true); holdV(d); markLift(d.i, marksSoon); })
         .on('mousemove', (ev, d) => tip(ev, pointTip(d.p) + `<div class="small">${!counting() ? '' : `weight ${WT[d.i].toFixed(2)} — ${WT[d.i] > 0.5 ? 'inside' : WT[d.i] > 0.1 ? 'at the edge of' : 'outside'} ${where()} · `}shift-click: lens here</div>` + (ext.get(d.i) ? `<div class="small muted">${ext.get(d.i)} ${ext.get(d.i) === 1 ? FW.edge : FW.edges} to items elsewhere</div>` : '')))
-        .on('mouseleave', ev => { gl.classed('hov', false); line.classed('on', false); d3.select(ev.currentTarget).classed('hov', false); tipOff(); releaseV(); })
+        .on('mouseleave', ev => { gl.classed('hov', false); line.classed('on', false); d3.select(ev.currentTarget).classed('hov', false); tipOff(); releaseV(); markLift(null, marksSoon); })
         .on('click', (ev, d) => { ev.stopPropagation(); tipOff(); if (ev.shiftKey) return setLens('i:' + d.i); openItem(d.p); });
       // the histories sit over the dots, so an unfolded line and its ticks are never under a neighbour; a tick holds
       // its line open, opens the item like its dot does, and while hovered is labelled with its version, date and the
@@ -2435,15 +2878,42 @@ async function viewField(p) {
       const ring = scene.append('circle').attr('class', 'bloupe').attr('display', 'none');
       const gBub = scene.append('g').attr('class', 'bbubs');
       const bubbles = makeBubbles(gBub, () => cur === st && !!FOC && loupeOn());
+      // Marked dots drawn a little toward their mark's middle (MARK_PULL), eased in over 0.7 s when the level opens or
+      // the set of marks changes. The offsets are recomputed from the dots' own places on every frame, so they follow the
+      // slab and the tilt without lag; a dot in two marks takes the average of the two pulls, so it never flickers.
+      let pullT = 0, pullSig = '', pullRaf = 0;
+      const pullAmt = () => {
+        const sig = marksShown().map(m => m.id + ':' + markIdx(m).length).join(',');
+        if (sig !== pullSig) { pullSig = sig; pullT = performance.now(); }
+        const u = reduce ? 1 : clamp01((performance.now() - pullT) / 700);
+        if (u < 1 && !pullRaf) pullRaf = requestAnimationFrame(() => { pullRaf = 0; if (cur === st && scene.node().isConnected) place(); });
+        return 1 - Math.pow(1 - u, 3);
+      };
+      const pullOffsets = () => {
+        const acc = new Map();
+        for (const m of marksShown()) {
+          const mem = markIdx(m).map(i => byI.get(i)).filter(d => d && d.w >= 0.1);
+          if (mem.length < 2) continue;
+          const mx = d3.mean(mem, d => d.bx), my = d3.mean(mem, d => d.by);
+          for (const d of mem) { const a = acc.get(d.i) || [0, 0, 0]; a[0] += (mx - d.bx) * MARK_PULL; a[1] += (my - d.by) * MARK_PULL; a[2]++; acc.set(d.i, a); }
+        }
+        return acc;
+      };
       function place() {
         const on = loupeOn() && FOC, zk = ZT.k, rl = RL / zk, zr = 1 / Math.sqrt(Math.max(1, zk));
-        for (const d of dots) { if (on) [d.x, d.y, d.z, d.inL] = fish(d.bx, d.by, rl); else { d.x = d.bx; d.y = d.by; d.z = 1; d.inL = false; } }
+        const E = pullAmt(), off = E ? pullOffsets() : null;
+        for (const d of dots) {
+          const o = off && off.get(d.i), px = d.bx + (o ? E * o[0] / o[2] : 0), py = d.by + (o ? E * o[1] / o[2] : 0);
+          d.ux = px; d.uy = py;   // where it is before the loupe (the marks' labels hold to this, so they stay put under it)
+          if (on) [d.x, d.y, d.z, d.inL] = fish(px, py, rl); else { d.x = px; d.y = py; d.z = 1; d.inL = false; }
+        }
         for (const d of dots) d.rr = d.dr * d.z * zr;
         dot.attr('cx', d => d.x.toFixed(1)).attr('cy', d => d.y.toFixed(1)).attr('r', d => d.rr.toFixed(2))
           .style('opacity', d => d.op * (on && !d.inL ? 0.45 : 1));
         vring.attr('cx', d => d.x.toFixed(1)).attr('cy', d => d.y.toFixed(1)).attr('r', d => (d.rr + 2.6 * zr).toFixed(2)).style('opacity', d => d.op * (on && !d.inL ? 0.45 : 1));
         for (const d of versioned) d.vp = d.vb.map(([x, y]) => on ? fish(x, y, rl) : [x, y]);
         line.attr('d', curve);
+        marksSoon();
         ver.attr('display', d => unfolded(d) ? null : 'none');
         const open = ver.filter(unfolded);
         open.select('path').attr('d', d => 'M' + [[d.x, d.y], ...d.vp].map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join('L'));
@@ -2592,7 +3062,7 @@ async function viewField(p) {
     bg.on('click', () => { if (dragged) { dragged = false; return; } if (cur && cur.path && !animating) location.hash = hashFor(parentPath(cur.path)); });
     const onKey = ev => {
       if (stale(g) || !svg.node().isConnected) { document.removeEventListener('keydown', onKey); stopDrift(); stopPlay(); return; }
-      if (ev.target instanceof HTMLInputElement && ev.target.type !== 'range') return;
+      if ((ev.target instanceof HTMLInputElement && ev.target.type !== 'range') || ev.target instanceof HTMLTextAreaElement || (ev.target && ev.target.isContentEditable)) return;   // typing in a card
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
       if (ev.key === 'Escape') {
         if (cur && cur.path) location.hash = hashFor(parentPath(cur.path));
@@ -2649,6 +3119,7 @@ async function viewField(p) {
     const applyZoom = () => {
       gZoom.attr('transform', ZT.k === 1 && !ZT.x && !ZT.y ? null : `translate(${ZT.x.toFixed(2)},${ZT.y.toFixed(2)}) scale(${ZT.k.toFixed(4)})`);
       if (cur && cur.zoomed) cur.zoomed();
+      marksSoon();
     };
     function resetZoom() { clearTimeout(springTimer); gZoom.interrupt(); ZT = { k: 1, x: 0, y: 0 }; applyZoom(); }
     const clampPan = () => {
@@ -2707,7 +3178,7 @@ async function viewField(p) {
 
     // ---------------------------------------------------------------- the loupe's focus and the text it opens
     let FOC = null, loupeRaf = 0;   // the mouse, in the level's own coordinates (under the zoom)
-    const loupeOn = () => L.loupe !== false && !!cur && cur.kind === 'items' && !animating;
+    const loupeOn = () => L.loupe !== false && !MARK.on && MARK.hov === null && !!cur && cur.kind === 'items' && !animating;
     svg.on('mousemove.loupe', ev => {
       if (!cur || !cur.hover) return;
       const [mx, my] = svgPt(ev);
@@ -2750,6 +3221,25 @@ async function viewField(p) {
       region: c => navTo(c.path),
       start: () => { fieldState.focus = ''; go(p.get('c') || ''); },
       current: () => cur ? cur.path : '',
+      // marks: the dots drawn now — the bottom level's (weight ≥ 0.1, the ones that take a click), or above it the dots
+      // the leaf circles show — in #fsvg's coordinates, through the pinch zoom
+      drawn: () => {
+        if (!cur || animating) return null;
+        const out = [], zk = ZT.k, sx = x => ZT.x + zk * x, sy = y => ZT.y + zk * y;
+        if (cur.kind === 'items') { for (const d of cur.byI ? cur.byI.values() : []) if (d.w >= 0.1) out.push({ i: d.i, x: sx(d.x), y: sy(d.y) }); return out; }
+        for (const d of cur.nodes || []) if (d.r >= 3 && d.pdots) for (const [i, px, py] of d.pdots) if (WT[i] >= 0.1) out.push({ i, x: sx(d.x + px), y: sy(d.y + py) });
+        return out.length ? out : null;
+      },
+      view: () => ({ mode: 'tour', hash: hashFor(cur ? cur.path : ''), path: cur ? cur.path : '', tour: { ...TS, sig: TS.sig === Infinity ? 'inf' : TS.sig } }),
+      // the deepest region holding every member, the slab moved onto their middle
+      fit: idx => {
+        if (!idx.length) return;
+        let common = cOf(F.points[idx[0]]).split('.');
+        for (const i of idx) { const p2 = cOf(F.points[i]).split('.'); let k = 0; while (k < common.length && common[k] === p2[k]) k++; common = common.slice(0, k); }
+        navTo(common.join('.'), [0, 1, 2, 3].map(k => d3.mean(idx, i => Q[i][k])));
+      },
+      marks: marksSoon,
+      lasso: () => { if (cur && cur.hover) cur.hover(); },   // the loupe steps aside while the lasso is out, and comes back
     };
   }
 
@@ -2826,12 +3316,128 @@ async function viewField(p) {
   }
   renderOrigins(); renderRegions();
 
+  // ---------------------------------------------------------------- marks: the side-panel list, the lasso, "go there"
+  function renderMarks() {
+    const el = main.querySelector('#fmarks');
+    if (!el) return;
+    const ms = MARKS || [];
+    el.innerHTML = `<h2>marks <span class="muted">— <a href="#" data-lasso title="lasso some dots (key l)">l</a> to lasso</span></h2>` + (ms.length
+      ? ms.map(m => `<div class="fmrow${m.state === 'proposed' ? ' prop' : ''}${MARK.hl === m.id ? ' hl' : ''}"><i></i><a href="#" data-mark="${esc(String(m.id))}">${esc(markName(m))}</a> <span class="muted small">${m.n ?? markIdx(m).length}${m.made_by === 'agent' ? ' · agent' : ''}${m.state === 'proposed' ? ' · proposal' : ''}</span>${m.note ? `<div class="muted small fmrnote">${esc(m.note.length > 90 ? m.note.slice(0, 89) + '…' : m.note)}</div>` : ''}</div>`).join('')
+      : '<div class="muted small">none yet — press <b>l</b> (or <b>mark</b> above the map) and drag around some dots</div>');
+    const byId = id => ms.find(m => String(m.id) === id);
+    el.querySelectorAll('a[data-mark]').forEach(a => {
+      const m = byId(a.dataset.mark);
+      a.onclick = ev => { ev.preventDefault(); if (m) markOpen(m.id); };
+      a.onmouseenter = () => { if (m && MARK.hl !== m.id) { MARK.hl = m.id; pres.marks && pres.marks(); } };
+      a.onmouseleave = () => { if (m && MARK.hl === m.id && !MCARDS.has(String(m.id))) { MARK.hl = null; pres.marks && pres.marks(); } };
+    });
+    el.querySelectorAll('a[data-lasso]').forEach(a => a.onclick = ev => { ev.preventDefault(); lassoSet(!MARK.on); });
+  }
+  MARK.refresh = () => { if (stale(g) || !wrap.isConnected) return; renderMarks(); pres.marks && pres.marks(); };
+  // "go there": the view the mark was made in — mode, level, plane, hidden blygs (a hash, plus the plane's zoom) — or,
+  // with no view, the map fitted to the members
+  MARK.go = (view, members) => {
+    if (stale(g) || !wrap.isConnected) return;
+    const idx = (members || []).map(x => KEYI.get(x.origin + '|' + x.id)).filter(i => i !== undefined);
+    if (!view || !MODES.includes(view.mode)) { if (idx.length && pres.fit) pres.fit(idx); return; }
+    const hid = Array.isArray(view.hidden) ? view.hidden : null;
+    const hidChanged = !!hid && (hid.length !== fieldState.hidden.size || hid.some(o => !fieldState.hidden.has(o)));
+    if (hidChanged) fieldState.hidden = new Set(hid);
+    if (view.mode === 'tour' && view.tour) fieldState.tour = view.tour;
+    const hash = view.hash || '#/field';
+    if (view.mode === mode && !hidChanged) {
+      if (mode === 'plane') return pres.go(view);
+      if (location.hash !== hash) location.hash = hash;   // the router hands it to the live view, which moves in place
+      return;
+    }
+    fieldState.mode = view.mode; saveFieldState();
+    MARK.pendingView = view;
+    fieldHashNav = null; history.replaceState(null, '', hash); route();
+  };
+
+  // The lasso: a layer over the map that takes the pointer while it is out (l, or `mark`); a freehand loop selects the
+  // dots drawn inside it — what each presentation's drawn() says is on screen now — and opens the card that names them.
+  const legendEl = main.querySelector('#flegend'), fsvg = main.querySelector('#fsvg');
+  const lz = d3.select(wrap).append('svg').attr('class', 'flasso');
+  const lzPath = lz.append('path').attr('class', 'flz'), lzDots = lz.append('g');
+  const hint = d3.select(wrap).append('div').attr('class', 'flzhint').attr('hidden', true);
+  const toSvg = ([x, y]) => { const r = fsvg.getBoundingClientRect(), vb = fsvg.viewBox.baseVal; return [(x - r.left) * vb.width / r.width, (y - r.top) * vb.height / r.height]; };
+  const toLz = ([x, y]) => { const r = lz.node().getBoundingClientRect(); return [x - r.left, y - r.top]; };
+  const NODOTS = 'zoom in to mark — at this level there are no dots to lasso';
+  function lassoSet(on) {
+    MARK.on = !!on;
+    lz.classed('on', MARK.on);
+    main.querySelectorAll('.fbar a[data-lasso], [data-fab="mark"]').forEach(a => a.classList.toggle('on', MARK.on));
+    if (MARK.on) {
+      const msg = pres.drawn() ? 'drag around the dots to mark them · Esc cancels' : NODOTS;
+      hint.attr('hidden', null).text(msg);
+      legendEl.innerHTML = `<b>lasso</b> — ${msg}`;
+    } else { hint.attr('hidden', true); legend(); }
+    if (pres.lasso) pres.lasso(MARK.on);
+  }
+  const clearLasso = () => { lzPath.attr('d', null); lzDots.selectAll('*').remove(); lz.classed('done', false); };
+  let poly = null;
+  const drawPoly = () => lzPath.attr('d', poly && poly.length > 1 ? 'M' + poly.map(q => toLz(q).map(v => v.toFixed(1)).join(',')).join('L') + 'Z' : null);
+  lz.on('pointerdown', ev => {
+    if (!MARK.on || ev.button !== 0) return;
+    ev.preventDefault(); lz.node().setPointerCapture(ev.pointerId);
+    if (MARK.pending) MARK.pending.close();
+    clearLasso();
+    poly = [[ev.clientX, ev.clientY]];
+  }).on('pointermove', ev => {
+    if (!poly) return;
+    const q = poly[poly.length - 1];
+    if (Math.hypot(ev.clientX - q[0], ev.clientY - q[1]) < 3) return;
+    poly.push([ev.clientX, ev.clientY]); drawPoly();
+  }).on('pointerup pointercancel', () => {
+    if (!poly) return;
+    const pts = poly; poly = null;
+    closeLasso(pts);
+  });
+  function closeLasso(pts) {
+    const sv = pts.map(toSvg);
+    if (pts.length < 4 || Math.abs(d3.polygonArea(sv)) < 80) { clearLasso(); return; }   // a click, not a loop
+    const dots = pres.drawn();
+    if (!dots) { clearLasso(); hint.text(NODOTS); return; }
+    const seen = new Set(), sel = [];
+    for (const d of dots) if (!seen.has(d.i) && d3.polygonContains(sv, [d.x, d.y])) { seen.add(d.i); sel.push(d); }
+    if (!sel.length) { clearLasso(); hint.text('nothing inside that loop — try again, or Esc'); return; }
+    // the loop and its dots stay drawn while the card is open
+    const r = fsvg.getBoundingClientRect(), vb = fsvg.viewBox.baseVal, lr = lz.node().getBoundingClientRect();
+    lzDots.selectAll('circle').data(sel).join('circle').attr('r', 4.5)
+      .attr('cx', d => d.x * r.width / vb.width + r.left - lr.left).attr('cy', d => d.y * r.height / vb.height + r.top - lr.top);
+    lz.classed('done', true);
+    lassoSet(false);
+    const view = Object.assign(pres.view ? pres.view() : { mode }, { hidden: [...fieldState.hidden], color: fieldState.color });
+    const gesture = { kind: 'lasso', points: sv.map(q => q.map(v => Math.round(v * 10) / 10)), w: Math.round(vb.width), h: Math.round(vb.height) };
+    markSaveCard(sel.map(d => F.points[d.i]), gesture, view, d3.max(pts, q => q[0]) + 18, d3.min(pts, q => q[1]), clearLasso);
+  }
+  main.querySelectorAll('.fbar a[data-lasso]').forEach(a => a.onclick = ev => { ev.preventDefault(); lassoSet(!MARK.on); });
+  const fabMark = main.querySelector('[data-fab="mark"]');
+  if (fabMark) fabMark.onclick = () => lassoSet(!MARK.on);
+  // l toggles the lasso; Esc puts it (or an unsaved card) away before the view's own Esc goes up a level
+  const onMarkKey = ev => {
+    if (stale(g) || !wrap.isConnected) { removeEventListener('keydown', onMarkKey, true); return; }
+    const t = ev.target, typing = (t instanceof HTMLInputElement && t.type !== 'range') || t instanceof HTMLTextAreaElement || (t && t.isContentEditable);
+    if (ev.key === 'Escape') {
+      if (MARK.on) { ev.preventDefault(); ev.stopImmediatePropagation(); lassoSet(false); return; }
+      if (MARK.pending && !typing) { ev.preventDefault(); ev.stopImmediatePropagation(); MARK.pending.close(); return; }
+      if (typing && t.closest && t.closest('.fmcard')) { ev.stopImmediatePropagation(); t.blur(); }   // out of the card's field, and no further
+      return;
+    }
+    if (typing || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (ev.key === 'l') { ev.preventDefault(); ev.stopImmediatePropagation(); lassoSet(!MARK.on); }
+  };
+  addEventListener('keydown', onMarkKey, true);
+  renderMarks();
+  marksLoad().then(() => MARK.refresh());
+
   // ---------------------------------------------------------------- tooltip + controls
   const $tip = main.querySelector('#ftip');
   function tip(ev, html) { $tip.innerHTML = html; $tip.hidden = false; const r = wrap.getBoundingClientRect(); $tip.style.left = Math.min(ev.clientX - r.left + 14, r.width - 340) + 'px'; $tip.style.top = Math.min(ev.clientY - r.top + 16, r.height - $tip.offsetHeight - 6) + 'px'; }
   function tipOff() { $tip.hidden = true; }
   main.querySelectorAll('a[data-mode]').forEach(a => a.onclick = ev => { ev.preventDefault(); if (a.dataset.mode === mode) return; fieldState.mode = a.dataset.mode; saveFieldState(); history.replaceState(null, '', '#/field'); route(); });   // the levels of one tree mean nothing in another
-  main.querySelectorAll('input[data-layer]').forEach(cb => cb.onchange = () => { L[cb.dataset.layer] = cb.checked; saveFieldState(); if (cb.checked && cb.dataset.layer === 'pulse' && !PULSE) loadPulse(); else restyle(); });
+  main.querySelectorAll('input[data-layer]').forEach(cb => cb.onchange = () => { L[cb.dataset.layer] = cb.checked; saveFieldState(); if (cb.dataset.layer === 'marks' || cb.dataset.layer === 'notes') pres.marks && pres.marks(); else if (cb.checked && cb.dataset.layer === 'pulse' && !PULSE) loadPulse(); else restyle(); });
   main.querySelectorAll('a[data-days]').forEach(a => a.onclick = ev => { ev.preventDefault(); fieldState.days = Number(a.dataset.days); saveFieldState(); main.querySelectorAll('a[data-days]').forEach(b => b.classList.toggle('on', b === a)); L.pulse = true; main.querySelector('input[data-layer=pulse]').checked = true; loadPulse(); });
   main.querySelectorAll('a[data-color]').forEach(a => a.onclick = ev => { ev.preventDefault(); fieldState.color = a.dataset.color; saveFieldState(); main.querySelectorAll('a[data-color]').forEach(b => b.classList.toggle('on', b === a)); legend(); restyle(); });
   // `/`: to the search — the page's bar, or in full screen (where the bar is hidden) a small box over the map. Enter

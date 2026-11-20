@@ -268,7 +268,7 @@ function describeTree(tree: ReturnType<typeof regionTree>, docs: Set<string>[], 
 }
 
 /** Eigen-decomposition of a small symmetric matrix (cyclic Jacobi): eigenvalues descending, eigenvectors as rows. */
-function symEigen(A: number[][]): { values: number[]; vectors: number[][] } {
+export function symEigen(A: number[][]): { values: number[]; vectors: number[][] } {
   const n = A.length, a = A.map(r => [...r]), V: number[][] = A.map((_, i) => A.map((__, j) => (i === j ? 1 : 0)));
   for (let sweep = 0; sweep < 60; sweep++) {
     let off = 0;

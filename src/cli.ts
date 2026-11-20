@@ -31,6 +31,13 @@
 //   query seen <id>                                     mark its hits seen: advance the query's watermark to now
 //   query retire <id> | query revive <id>               stop running it but keep its history | bring it back
 //   query delete <id>                                   remove it with its runs, hits and keeps (not undoable)
+//
+// Marks (places marked on the map; usually made with the lasso on the Field):
+//   mark list                                           id · name · size · who made it
+//   mark show <id> [--json] [--reads]                   the shape block (computed facts about the set) and the notes
+//   mark open <id> [--budget 12000] [--json]            what an agent gets: the block, notes, member texts to a budget
+//   mark add --name "…" [--note "…"] <ref> <ref> …      make a mark from items
+//   mark note <id> "text" | mark rename <id> "name" | mark keep <id> | mark delete <id>
 
 import { PORT, CONTACT } from './config.js';
 
@@ -48,6 +55,7 @@ const USAGE = `blyg-atlas — a reader-side atlas of the blygger network
   pulse [--days 3] · recent · map · frontier · stale
   item | thread | lineage <id|url>
   query add|list|run|once|show|keep|unkeep|dismiss|seen|retire|revive|delete
+  mark list|show|open|add|note|rename|keep|delete   places marked on the map
   sql "SELECT ..."
 
 Every flag is in the comment at the top of src/cli.ts. (blyg-atlas = bin/blyg-atlas, or npx tsx src/cli.ts)
@@ -68,7 +76,7 @@ async function main() {
     if (a.startsWith('--')) {
       const k = a.slice(2);
       if (k.startsWith('no-')) flags[k.slice(3)] = false;
-      else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) { const v = argv[++i]; flags[k] = isNaN(Number(v)) ? v : Number(v); }
+      else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) { const v = argv[++i]; flags[k] = v.trim() === '' || isNaN(Number(v)) ? v : Number(v); }
       else flags[k] = true;
     } else pos.push(a);
   }
@@ -105,6 +113,7 @@ async function main() {
     case 'pulse': out(await executeTool('blyg_pulse', { days: flags.days, since: flags.since, limit: flags.limit, origin: flags.origin, half_life_days: flags['half-life'], neighborhood: flags.neighborhood, text: !flags.json, mark_viewed: !!flags.mark })); break;
     case 'sql': out(await executeTool('blyg_sql', { sql: pos.join(' '), limit: flags.limit })); break;
     case 'query': await queryCmd(db(), pos, flags, out); break;
+    case 'mark': case 'marks': await markCmd(db(), cmd === 'marks' ? ['list', ...pos] : pos, flags, out); break;
     default:
       process.stderr.write(`unknown command "${cmd}"\n\n${USAGE}`);
       process.exit(1);
@@ -167,6 +176,34 @@ async function queryCmd(d: any, pos: string[], flags: Record<string, any>, out: 
     case 'revive': Q.setActive(d, id(), true); out(`#${id()} active`); break;
     case 'delete': { const r = Q.deleteQuery(d, id()); out(`#${r.id} "${r.text}" deleted, with ${r.keeps} keeps and ${r.runs} runs`); break; }
     default: throw new Error('query add|list|run|once|show|keep|unkeep|dismiss|seen|retire|revive|delete  (see header comment)');
+  }
+}
+
+async function markCmd(d: any, pos: string[], flags: Record<string, any>, out: (s: string) => void) {
+  const M = await import('./marks.js');
+  const sub = pos.shift() || 'list';
+  const id = () => { const n = Number(pos[0]); if (!Number.isInteger(n)) throw new Error(`mark ${sub}: expected a mark id`); return n; };
+  switch (sub) {
+    case 'list': out(M.renderMarkList(M.listMarks(d))); break;
+    case 'show': {
+      const g = M.getMark(d, id(), { reads: !!flags.reads });
+      if (flags.json) { out(JSON.stringify(g.shape, null, 1)); break; }
+      out(g.shape_text);
+      for (const n of g.notes as any[]) out(`  note (${n.author}, ${n.at.slice(0, 10)}): ${n.text}`);
+      break;
+    }
+    case 'open': out(JSON.stringify(M.openMark(d, id(), { budget_tokens: flags.budget, reads: !!flags.reads, json: !!flags.json }), null, 1)); break;
+    case 'add': {
+      if (!pos.length) throw new Error('mark add --name "…" [--note "…"] <ref> <ref> …');
+      const m = M.createMark(d, { name: flags.name ?? '', note: flags.note ?? null, members: pos });
+      out(`mark #${m.id} "${m.name}" · ${m.n} items\n\n${M.getMark(d, m.id).shape_text}`);
+      break;
+    }
+    case 'note': { const n = M.addNote(d, id(), pos.slice(1).join(' ')); out(`noted on #${pos[0]} at ${n.at}`); break; }
+    case 'rename': { const m = M.updateMark(d, id(), { name: pos.slice(1).join(' ') }); out(`#${m.id} is "${m.name}"`); break; }
+    case 'keep': { const m = M.updateMark(d, id(), { state: 'kept' }); out(`#${m.id} kept`); break; }
+    case 'delete': out(JSON.stringify(M.deleteMark(d, id()))); break;
+    default: throw new Error('mark list|show|open|add|note|rename|keep|delete  (see header comment)');
   }
 }
 

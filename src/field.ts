@@ -30,7 +30,7 @@ import { SIDECAR_PATH, FIELD_UI } from './config.js';
 
 // ---------------------------------------------------------------- vectors
 
-function loadVectors(db: Database.Database): { keys: string[]; m: Float32Array; dim: number } {
+export function loadVectors(db: Database.Database): { keys: string[]; m: Float32Array; dim: number } {
   const rows = db.prepare(`SELECT e.origin, e.id, e.vector FROM embeddings e JOIN items i ON i.origin=e.origin AND i.id=e.id WHERE e.model=? AND COALESCE(i.kind,'') <> 'withdrawn' ORDER BY e.origin, e.id`).all(EMBED_MODEL) as any[];
   if (!rows.length) return { keys: [], m: new Float32Array(0), dim: 0 };
   const dim = fromBlob(rows[0].vector).length;
@@ -221,7 +221,7 @@ export function fieldPulse(db: Database.Database, v: FieldView, opts: { since?: 
 
 /** The naming words of every item, by point index — what the regions were named from, kept for the rim labels. */
 const docsCache = new WeakMap<FieldView, Set<string>[]>();
-function fieldDocs(db: Database.Database, v: FieldView): Set<string>[] {
+export function fieldDocs(db: Database.Database, v: FieldView): Set<string>[] {
   let docs = docsCache.get(v);
   if (docs) return docs;
   docs = namingDocs(db, v.points);

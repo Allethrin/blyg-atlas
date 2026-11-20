@@ -6,6 +6,7 @@ import { openDb, crawl, locateItem, normalizeOrigin, resolveEdges } from './core
 import { search, embedMissing, itemUrl, EMBED_MODEL } from './search.js';
 import { pulse, renderPulse, markViewed, lastViewed } from './pulse.js';
 import * as Q from './query.js';
+import * as M from './marks.js';
 
 export interface Tool { name: string; description: string; input_schema: any }
 
@@ -159,8 +160,45 @@ export const toolDefs: Tool[] = [
     },
   },
   {
+    name: 'blyg_marks',
+    description: "The reader's marks: sets of items they picked out on the map (a lasso on the Field), each with their own name and note. Lists id, name, size, who made it (reader, or an agent's proposal) and the note. Open one with blyg_mark.",
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'blyg_mark',
+    description: "Open a mark: its shape block (computed facts about the set, no model: who and when, which regions it sits in, its shape on the map and whether that shape holds in the full embedding, links in and out, other marks it touches; every number next to what a random set scores), the notes on it, and the member texts oldest first up to a token budget (the rest named, readable with blyg_item). Under 12 items the block is a table of pairs instead of a shape. The block is facts: the reading is yours, under the reader's prompt.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Mark id (blyg_marks)' },
+        budget_tokens: { type: 'number', description: 'Member text budget (default 12000; 0 = shape and notes only)' },
+        json: { type: 'boolean', description: 'Also return the shape block as JSON (every number, the pairs table in full)' },
+        reads: { type: 'boolean', description: 'Include how many members the reader has opened (their read history — only when they asked for it)' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'blyg_mark_propose',
+    description: "Propose a mark: a set of items you want to point the reader at, with a name and a note on why. It is drawn on their map as a proposal (dashed) until they keep or discard it; a kept one still records that an agent made it. Use it to show the reader a pattern they might not see. Items by bare id, URL or \"origin id\".",
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Short name for the mark' },
+        note: { type: 'string', description: 'Why these items belong together' },
+        refs: { type: 'array', items: { type: 'string' }, description: 'The items' },
+      },
+      required: ['name', 'refs'],
+    },
+  },
+  {
+    name: 'blyg_mark_note',
+    description: "Add a note to a mark, recorded as written by an agent. Only when the reader asks to keep something on the mark: a chat about a mark is not saved by default.",
+    input_schema: { type: 'object', properties: { id: { type: 'number' }, text: { type: 'string' } }, required: ['id', 'text'] },
+  },
+  {
     name: 'blyg_sql',
-    description: 'Read-only SELECT over the atlas database. Tables: origins(origin, kind, title, author_name, blyg_version, level, generator, hop, discovered_via, discovered_from, last_crawled, last_status), items(origin, id, kind, created, updated, version, title, content_md, content_text, content_hash, author_name, page, has_generated), changelog(origin, id, version, at, note, generated), edges(src_origin, src_id, src_version, type, dst_origin, dst_id, dst_version, dst_url, selector_exact, cited_excerpt, cited_author, cited_source), embeddings(origin, id, version, model, dim), crawl_runs(id, started, finished, origins_visited, items_fetched, items_changed, edges_added, errors, notes), queries(id, text, created, updated, active, last_viewed, last_run, min_score, note), query_runs(id, query_id, at, since, until, moved, pooled, hits, new_hits), query_hits(query_id, origin, item_id, version, first_hit, last_hit, score, path, moved, moved_at, context, state, state_at, state_version), query_keeps(query_id, origin, item_id, version, kept_at, note).',
+    description: 'Read-only SELECT over the atlas database. Tables: origins(origin, kind, title, author_name, blyg_version, level, generator, hop, discovered_via, discovered_from, last_crawled, last_status), items(origin, id, kind, created, updated, version, title, content_md, content_text, content_hash, author_name, page, has_generated), changelog(origin, id, version, at, note, generated), edges(src_origin, src_id, src_version, type, dst_origin, dst_id, dst_version, dst_url, selector_exact, cited_excerpt, cited_author, cited_source), embeddings(origin, id, version, model, dim), crawl_runs(id, started, finished, origins_visited, items_fetched, items_changed, edges_added, errors, notes), queries(id, text, created, updated, active, last_viewed, last_run, min_score, note), query_runs(id, query_id, at, since, until, moved, pooled, hits, new_hits), query_hits(query_id, origin, item_id, version, first_hit, last_hit, score, path, moved, moved_at, context, state, state_at, state_version), query_keeps(query_id, origin, item_id, version, kept_at, note), marks(id, name, note, made_by, state, created, updated), mark_members(mark_id, origin, item_id, version), mark_notes(id, mark_id, author, text, at).',
     input_schema: { type: 'object', properties: { sql: { type: 'string' }, limit: { type: 'number', description: 'Row cap (default 100)' } }, required: ['sql'] },
   },
 ];
@@ -379,6 +417,19 @@ export async function executeTool(name: string, args: any, onLog?: (s: string) =
       if (action === 'dismiss') return J(Q.dismiss(d, Number(args.id), args.ref));
       const r = Q.keep(d, Number(args.id), args.ref, { note: args.note ?? null });
       return `kept "${r.title || r.id}" v${r.version} under #${r.query_id}`;
+    }
+    case 'blyg_marks': return M.renderMarkList(M.listMarks(d));
+    case 'blyg_mark': {
+      const r = M.openMark(d, Number(args.id), { budget_tokens: args.budget_tokens, json: !!args.json, reads: !!args.reads });
+      return `${r.shape_text}\n\n${J({ ...r, shape_text: undefined })}`;
+    }
+    case 'blyg_mark_propose': {
+      const m = M.createMark(d, { name: args.name, note: args.note ?? null, members: Array.isArray(args.refs) ? args.refs : [], made_by: 'agent' });
+      return `proposed mark #${m.id} "${m.name}" (${m.n} items) — drawn on the reader's map until they keep or discard it\n\n${M.openMark(d, m.id, { budget_tokens: 0 }).shape_text}`;
+    }
+    case 'blyg_mark_note': {
+      const n = M.addNote(d, Number(args.id), args.text, 'agent');
+      return `noted on mark #${args.id} (agent, ${n.at})`;
     }
     case 'blyg_sql': {
       const sql = String(args.sql || '').trim();

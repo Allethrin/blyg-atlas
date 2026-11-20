@@ -28,6 +28,12 @@ interface AtlasConfig {
     spaces?: ('mt' | 'm4' | 'ar')[];          // tour spaces: meaning + time, meaning in 4D, the arrow space (default ['mt'])
     time_fixed?: boolean;                     // meaning + time: no control turns time out of the horizontal (default true)
   };
+  marks?: {             // suggested names and notes for a fresh lasso. Off until both a model and a prompt file are set.
+    model?: string;     // an Ollama model, e.g. "qwen3.5:4b" — local only; the lassoed texts' titles and shape block go to it
+    prompts?: { name?: string; note?: string };   // paths to prompt files the reader writes. {{block}} and {{titles}} are
+                        // filled in; without them the file is the system prompt and the block + titles the message.
+                        // <!-- comments --> are dropped; a file that is empty after that turns the suggestion off.
+  };
 }
 
 function readConfig(): AtlasConfig {
@@ -46,6 +52,7 @@ export const OWN_ORIGIN: string | null = process.env.BLYG_OWN_ORIGIN || CONFIG.o
 export const PUBLISHER: string | null = local(process.env.BLYG_PUBLISHER || CONFIG.publisher) || null;
 export const PORT = Number(process.env.BLYG_PORT || CONFIG.port || 5053);
 export const FIELD_UI = { modes: ['tour'], spaces: ['mt'], time_fixed: true, ...(CONFIG.field || {}) };
+export const MARKS_AI = { model: process.env.BLYG_MARK_MODEL || CONFIG.marks?.model || null, prompts: { name: local(process.env.BLYG_MARK_PROMPT_NAME || CONFIG.marks?.prompts?.name) ?? null, note: local(process.env.BLYG_MARK_PROMPT_NOTE || CONFIG.marks?.prompts?.note) ?? null } };
 export const SIDECAR_PATH = path.join(ATLAS_DIR, 'field-sidecar.json');
 export const MODEL_CACHE = path.join(ATLAS_DIR, '.model-cache');
 export const ENV_PATH = path.join(ATLAS_DIR, '.env');

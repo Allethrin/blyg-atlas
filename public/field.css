@@ -248,3 +248,64 @@ body.ffull:not(.fbare) .ffab [data-fab="drift"] { display: none; }
 .fempty { max-width: 46rem; margin: 3rem auto; line-height: 1.5; }
 .fempty h2 { margin: 0 0 .75rem; }
 .fempty-cmd { padding: .6rem .8rem; border: 1px solid rgba(128, 128, 128, .35); border-radius: 6px; overflow-x: auto; font-size: .92em; }
+
+/* marks (Nov 19): the lasso, the outlines on the map, the side-panel list, the cards. One quiet colour of their own. */
+:root { --mark: #2a7a8c; }
+@media (prefers-color-scheme: dark) { :root { --mark: #6cc3d1; } }
+.flasso { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+.flasso.on { pointer-events: all; cursor: crosshair; touch-action: none; }
+.flz { fill: var(--mark); fill-opacity: .07; stroke: var(--mark); stroke-width: 1.5; stroke-dasharray: 5 4; stroke-linejoin: round; }
+.flasso.done .flz { stroke-dasharray: none; fill-opacity: .1; }
+.flasso circle { fill: none; stroke: var(--mark); stroke-width: 1.6; }
+.flzhint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 3; font-size: 12.5px; padding: 3px 11px; border: 1px solid var(--mark); border-radius: 14px; background: var(--bg); color: var(--fg); pointer-events: none; white-space: nowrap; }
+.flzhint[hidden] { display: none; }
+.fbar a[data-lasso].on, #ffab [data-fab="mark"].on { color: var(--mark); border-color: var(--mark); }
+.fmarks { pointer-events: none; }
+/* a mark on the map: a soft bubble (fill from #fmarkfill, a radial gradient in --mark), a thin rim; an agent's
+   proposal has a dotted rim; hovered (its label, a member dot, its card or its row) it lifts a little */
+.fmb { fill: url(#fmarkfill); stroke: var(--mark); stroke-opacity: .45; stroke-width: 1; vector-effect: non-scaling-stroke; transition: stroke-opacity .18s, fill-opacity .18s; }
+.fmb.prop { stroke-dasharray: 2 3; stroke-opacity: .7; }
+.fmb.ring { fill: none; stroke-opacity: .7; stroke-width: 1.3; }   /* round a whole circle (above the bottom level): a ring, no fill, so several marks on one cluster never stack into a wash over its colour */
+.fmb.lift { stroke-opacity: .75; }
+.fmb.on { stroke-opacity: .95; stroke-width: 1.4; filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .16)); }
+@media (prefers-color-scheme: dark) { .fmb.on { filter: drop-shadow(0 3px 9px rgba(0, 0, 0, .55)); } }
+/* its words, laid on the map: the name in spaced capitals, the note as an italic gloss; a plate behind them only
+   while hovered, when the whole note shows */
+.fml { pointer-events: all; cursor: pointer; }
+.fml text { text-anchor: middle; font-family: Georgia, "Iowan Old Style", serif; paint-order: stroke; stroke: var(--bg); stroke-linejoin: round; }
+.fml .mn { font-size: 10.5px; font-weight: 600; letter-spacing: .16em; fill: var(--mark); stroke-width: 3.4px; stroke-opacity: .9; }
+.fml .mt { font-size: 11.5px; font-style: italic; fill: var(--fg); fill-opacity: .78; stroke-width: 3px; stroke-opacity: .85; }
+.fml.in .mt { fill-opacity: .72; }
+.fml .fmplate { fill: var(--bg); fill-opacity: 0; stroke: var(--mark); stroke-opacity: 0; vector-effect: non-scaling-stroke; transition: fill-opacity .15s; }
+.fml.on .fmplate { fill-opacity: .9; stroke-opacity: .35; }
+.fml.on .mt { fill-opacity: .95; }
+.fml.on .mn { fill: var(--fg); }
+.fmrow { padding: 5px 0 5px 17px; border-bottom: 1px solid var(--line); position: relative; }
+.fmrow i { position: absolute; left: 2px; top: 10px; width: 8px; height: 8px; border: 1.5px solid var(--mark); border-radius: 50%; }
+.fmrow.prop i { border-style: dashed; }
+.fmrow a { font-weight: 600; color: var(--mark); }
+.fmrow.hl a { text-decoration: underline; }
+.fmrnote { font-size: 12px; }
+.fmcard .fchead { border-bottom-color: var(--mark); }
+.fmcard.prop { border-style: dashed; border-color: var(--mark); }
+.fmcard .frscroll { padding: 8px 14px 16px; }
+.fmcard.fmsave { height: auto !important; resize: horizontal; }
+.fmcard input.fmname, .fmcard textarea { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 13.5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); margin: 0 0 6px; resize: vertical; }
+.fmcard input.fmname { font-weight: 600; }
+.fmcard input:focus, .fmcard textarea:focus { outline: none; border-color: var(--mark); }
+.fmcard button { font: inherit; font-size: 12.5px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); color: var(--fg); cursor: pointer; margin-right: 4px; }
+.fmcard button:hover:not(:disabled) { border-color: var(--mark); }
+.fmcard button:disabled { opacity: .45; cursor: default; }
+.fmcard button.fmdel { color: var(--mute); }
+.fmact { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
+.fmmsg { margin-left: 4px; }
+.fmlist { margin: 0 0 8px; }
+.fmmeta { margin-bottom: 6px; }
+.fmprop { margin: 6px 0 8px; padding: 6px 8px; border: 1px dashed var(--mark); border-radius: 6px; }
+.fmcard pre { font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; margin: 6px 0; padding: 8px 10px; background: var(--soft); border-radius: 6px; overflow-x: auto; }
+.fmcard details { margin-top: 10px; }
+.fmcard summary { cursor: pointer; font-size: 12.5px; color: var(--mute); }
+.fmm { padding: 2px 0; font-size: 13px; }
+.fmn { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.fmn.agent .fmnt { font-style: italic; }
+.fmnotes textarea { margin-top: 6px; }

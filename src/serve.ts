@@ -171,8 +171,24 @@ async function main() {
     return F.fieldSearch(d, F.field(d, fieldLog), q, Number(req.query.top_k || 30));
   }));
 
+  // --- Marks: places the reader marks on the map (marks.ts). Local, never published. ------------------------------
+  const M = await import('./marks.js');
+  const mid = (req: express.Request) => { const n = Number(req.params.id); if (!Number.isInteger(n)) throw new Error('bad mark id'); return n; };
+  app.get('/api/marks', wrap(async () => ({ marks: M.listMarks(d) })));
+  app.post('/api/marks', wrap(async (req) => ({ mark: M.createMark(d, { name: req.body?.name, note: req.body?.note ?? null, members: Array.isArray(req.body?.members) ? req.body.members : [], view: req.body?.view, gesture: req.body?.gesture }) })));
+  // suggestions for a fresh lasso: { members, view, tier: 'terms' | 'model', what: 'name' | 'note' }
+  app.post('/api/marks/suggest', wrap(async (req) => {
+    const members = Array.isArray(req.body?.members) ? req.body.members : [], view = req.body?.view;
+    if (req.body?.tier === 'model') return M.suggestModel(d, members, view, req.body?.what === 'note' ? 'note' : 'name');
+    return M.suggestTerms(d, members, view);
+  }));
+  app.get('/api/mark/:id', wrap(async (req) => M.getMark(d, mid(req), { reads: req.query.reads === '1' })));
+  app.post('/api/mark/:id', wrap(async (req) => ({ mark: M.updateMark(d, mid(req), { name: req.body?.name, note: req.body?.note, state: req.body?.state }) })));
+  app.post('/api/mark/:id/note', wrap(async (req) => ({ note: M.addNote(d, mid(req), String(req.body?.text ?? ''), 'reader') })));
+  app.post('/api/mark/:id/delete', wrap(async (req) => M.deleteMark(d, mid(req))));
+
   // Optional parts the page asks about (casual replies need a publisher in atlas.config.json), and the running version.
-  app.get('/api/features', wrap(async () => ({ publisher: !!PUBLISH, version: (await import('./config.js')).VERSION })));
+  app.get('/api/features', wrap(async () => { const C = await import('./config.js'); return { publisher: !!PUBLISH, version: C.VERSION, mark_model: C.MARKS_AI.model }; }));
   // What the atlas holds — the page reads this to explain an empty Field (nothing crawled yet / crawled but not embedded).
   app.get('/api/status', wrap(async () => {
     const { EMBED_MODEL } = await import('./embed.js');
