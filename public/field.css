@@ -267,6 +267,14 @@ body.ffull:not(.fbare) .ffab [data-fab="drift"] { display: none; }
 .fmb.prop { stroke-dasharray: 2 3; stroke-opacity: .7; }
 .fmb.ring { fill: none; stroke-opacity: .7; stroke-width: 1.3; }   /* round a whole circle (above the bottom level): a ring, no fill, so several marks on one cluster never stack into a wash over its colour */
 .fmb.col { fill: url(#fmarkfillc); stroke-opacity: .7; stroke-width: 1.2; }   /* collapsed: a region of its own */
+/* the bottom level (Nov 20): each mark one smooth region, a flat wash and a firmer rim, like the other regions; under
+   each a casing — a band of the background — so where two rims cross, the smaller mark's passes cleanly over the larger */
+.fmk { fill: none; stroke: var(--bg); stroke-width: 5; stroke-opacity: .9; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.fmk.ring, .fmk.minor { display: none; }
+.fmb.hull { fill: var(--mark); fill-opacity: .1; stroke-opacity: .7; stroke-width: 2; stroke-linejoin: round; }
+.fmb.hull.minor { fill-opacity: .04; stroke-opacity: .35; stroke-width: 1; stroke-dasharray: 3 3; }
+.fmb.hull.lift { stroke-opacity: .85; }
+.fmb.hull.on { fill-opacity: .15; stroke-opacity: 1; stroke-width: 2.4; }
 .fmb.lift { stroke-opacity: .75; }
 .fmb.on { stroke-opacity: .95; stroke-width: 1.4; filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .16)); }
 @media (prefers-color-scheme: dark) { .fmb.on { filter: drop-shadow(0 3px 9px rgba(0, 0, 0, .55)); } }
@@ -324,3 +332,6 @@ body.ffull:not(.fbare) .ffab [data-fab="drift"] { display: none; }
 .fmnotes textarea { margin-top: 6px; }
 
 .fmleg { color: var(--mark); }
+/* above the bottom level: how many marks a circle holds, one quiet pill on its rim (Nov 20) */
+.fmbadge rect { fill: var(--bg); fill-opacity: .92; stroke: var(--mark); stroke-opacity: .55; stroke-width: 1; }
+.fmbadge text { font: 10px ui-monospace, Menlo, monospace; letter-spacing: .03em; fill: var(--mark); text-anchor: middle; }

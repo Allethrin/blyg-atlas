@@ -719,10 +719,11 @@ async function viewField(p) {
   // melt together as metaballs do — sampled on a coarse grid (~3k cells) and its rings smoothed. Members far apart give
   // islands: that is where they are. The largest island carries the label.
   const blobLine = d3.line().curve(d3.curveBasisClosed), colLine = d3.line().curve(d3.curveCatmullRomClosed.alpha(0.5));
-  // Display only, a distortion on purpose: at the tour's bottom level a marked dot is drawn this share of the way toward
-  // its mark's middle, so the set reads as a set. Item positions, the layout, the lasso and every number about the mark
-  // are untouched; a dot in two marks takes the average of the two pulls. 0 turns it off.
-  const MARK_PULL = 0.2;
+  // Display only, a distortion on purpose: at the tour's bottom level a mark's dots are drawn squeezed toward its middle
+  // (see pullOffsets), so the set reads as one region. Item positions, the layout, the lasso and every number about the
+  // mark are untouched; a dot in two marks takes the average of the two. MARK_GLOM is how far out the squeeze levels off,
+  // as a share of the members' median distance from the middle: smaller pulls them in harder.
+  const MARK_GLOM = 0.8;
   function markBlob(pl) {
     if (!pl.length) return null;
     if (pl.length > 400) { const st = Math.ceil(pl.length / 400); pl = pl.filter((_, j) => j % st === 0); }   // a huge mark: a sample shapes it
@@ -753,6 +754,48 @@ async function viewField(p) {
     for (const r of rings) { const a = Math.abs(d3.polygonArea(r)); if (a > ma) { ma = a; main = r; } }
     const b = { x0: d3.min(main, q => q[0]), y0: d3.min(main, q => q[1]), x1: d3.max(main, q => q[0]), y1: d3.max(main, q => q[1]), cx: d3.mean(main, q => q[0]), cy: d3.mean(main, q => q[1]), area: ma };
     return { d: rings.map(r => blobLine(r)).join(''), b };
+  }
+  // At the tour's bottom level a mark is one simple region (Ben, Nov 20: "a smooth/clear and probably thicker boundary,
+  // more like the other regions … simple and smoothed out a lot. abstracted"): along each ray from the members' middle,
+  // how far out their discs reach, R(θ); that outline kept to its first few harmonics, so it is one smooth lobe-y shape
+  // with no islands and no dents round single dots; then lifted until it covers nearly all of R. A mark split across
+  // the level is one shape over the gap (the glom, below, has pulled its members in first).
+  const HULL_NB = 96, HULL_K = 3;
+  function markHull(pl) {
+    if (!pl.length) return null;
+    if (pl.length > 400) { const st = Math.ceil(pl.length / 400); pl = pl.filter((_, j) => j % st === 0); }
+    const cx = d3.mean(pl, q => q[0]), cy = d3.mean(pl, q => q[1]), NB = HULL_NB, TA = 2 * Math.PI;
+    const R = new Float64Array(NB).fill(NaN);
+    for (const [x, y, r] of pl) {
+      const dx = x - cx, dy = y - cy;
+      for (let k = 0; k < NB; k++) {
+        const c0 = Math.cos(k * TA / NB), s0 = Math.sin(k * TA / NB), t = dx * c0 + dy * s0, e = -dx * s0 + dy * c0;
+        if (Math.abs(e) >= r) continue;
+        const ex = t + Math.sqrt(r * r - e * e);
+        if (ex > 0 && !(R[k] >= ex)) R[k] = ex;
+      }
+    }
+    if (![...R].some(v => v === v)) return null;
+    for (let k = 0; k < NB; k++) if (R[k] !== R[k]) {   // a ray through a gap: from its neighbours round the circle
+      let a = k, b = k, da = 0, db = 0;
+      while (R[a] !== R[a]) { a = (a + NB - 1) % NB; da++; }
+      while (R[b] !== R[b]) { b = (b + 1) % NB; db++; }
+      R[k] = (R[a] * db + R[b] * da) / (da + db);
+    }
+    // the low harmonics only
+    const L = new Float64Array(NB).fill(0);
+    for (let h = 0; h <= HULL_K; h++) {
+      let a = 0, b = 0;
+      for (let k = 0; k < NB; k++) { a += R[k] * Math.cos(h * k * TA / NB); b += R[k] * Math.sin(h * k * TA / NB); }
+      a *= (h ? 2 : 1) / NB; b *= (h ? 2 : 1) / NB;
+      for (let k = 0; k < NB; k++) L[k] += a * Math.cos(h * k * TA / NB) + b * Math.sin(h * k * TA / NB);
+    }
+    // lifted to cover the reach of nearly every ray; never thinner than the biggest disc
+    const short = [...R].map((v, k) => v - L[k]).sort((p, q) => p - q), lift = Math.max(0, short[Math.floor(0.9 * (NB - 1))]);
+    const rmin = d3.max(pl, q => q[2]);
+    const pts = Array.from(L, (v, k) => { const rr = Math.max(rmin, v + lift); return [cx + rr * Math.cos(k * TA / NB), cy + rr * Math.sin(k * TA / NB)]; });
+    const b = { x0: d3.min(pts, q => q[0]), y0: d3.min(pts, q => q[1]), x1: d3.max(pts, q => q[0]), y1: d3.max(pts, q => q[1]), cx, cy, area: Math.abs(d3.polygonArea(pts)) };
+    return { d: colLine(pts), b };
   }
   // The words (Ben: "the text could look nicer, and kinda laid on/in the mark … I want to be able to scan all the notes
   // just looking at it"): the name in spaced capitals, the note under it as a short italic gloss (two lines; all of it
@@ -789,35 +832,74 @@ async function viewField(p) {
     const T = MARK_TYPE, placed = [...keep], out = [];
     for (const r of [...rows].sort((a, b) => (b.lb || b.blob.b).area - (a.lb || a.blob.b).area)) {
       const b = r.lb || r.blob.b, m = r.m, open = MARK.hov === m.id;
+      if (r.minor && !markOn(m)) continue;
       const name = markName(m).toUpperCase();
       const note = L.notes !== false && m.note ? String(m.note).trim() : '';
-      const lines = [{ t: name, c: 'mn', h: T.nameH }];
-      if (r.col) lines.push({ t: `∙ ${r.col.n} ∙`, c: 'mc', h: 13 });   // collapsed: its count, as a region's circle has
-      // collapsed: the name and count sit in the middle of the circle, and the note hangs just under its lower edge
-      const gap = r.col && note ? Math.max(0, (b.y1 - b.cy) * zk - (T.nameH + 13) / 2 + 6) : 0;
-      if (gap) lines.push({ t: '', c: 'gap', h: gap });
-      // round a whole circle (above the bottom level) the circle's own name is inside it: the mark's words go outside, one line of gloss
-      if (note) for (const t of wrapLines(note, open ? T.full : T.gloss, open ? T.fullLines : r.ring ? 1 : T.glossLines)) lines.push({ t, c: 'mt', h: T.noteH });
       const hn = open && hint ? hint(m) : '';
-      if (hn) lines.push({ t: hn, c: 'mh', h: 14 });
-      const w = Math.max(markTextW(name, !!r.col), ...lines.slice(1).map(q => q.t.length * T.noteW)), h = d3.sum(lines, q => q.h);
-      const hc = r.col ? T.nameH + 13 : h;   // the part centred in a collapsed mark
+      // the lines of one way of setting the label: with its note (as a gloss, or all of it while hovered), or bare
+      // nameMax: inside a mark, a name wider than this is set on two or three lines, a word or two each, as a map stacks one
+      const nameLines = nameMax => {
+        if (!nameMax || markTextW(name, !!r.col) <= nameMax) return [name];
+        const out = [];
+        for (const wd of name.split(/\s+/)) { const last = out[out.length - 1]; if (last && markTextW(last + ' ' + wd) <= nameMax) out[out.length - 1] = last + ' ' + wd; else out.push(wd); }
+        return out.length <= 3 ? out : [name];
+      };
+      const setLines = (withNote, wn = T.gloss, wl = T.glossLines, nameMax = 0) => {
+        const lines = nameLines(nameMax).map(t => ({ t, c: 'mn', h: T.nameH - 1 }));
+        lines[lines.length - 1].h = T.nameH;
+        if (r.col) lines.push({ t: `∙ ${r.col.n} ∙`, c: 'mc', h: 13 });   // collapsed: its count, as a region's circle has
+        // collapsed: the name and count sit in the middle of the circle, and the note hangs just under its lower edge
+        const gap = r.col && note && withNote ? Math.max(0, (b.y1 - b.cy) * zk - (T.nameH + 13) / 2 + 6) : 0;
+        if (gap) lines.push({ t: '', c: 'gap', h: gap });
+        // round a whole circle (above the bottom level) the circle's own name is inside it: the mark's words go outside, one line of gloss
+        if (note && withNote) for (const t of wrapLines(note, open ? T.full : wn, open ? T.fullLines : r.ring ? 1 : wl)) lines.push({ t, c: 'mt', h: T.noteH });
+        if (hn) lines.push({ t: hn, c: 'mh', h: 14 });
+        const w = Math.max(...lines.map(q => q.c === 'mn' ? markTextW(q.t, !!r.col) : q.t.length * T.noteW)), h = d3.sum(lines, q => q.h);
+        return { lines, w, h, gap };
+      };
       const ws = (b.x1 - b.x0) * zk, hs = (b.y1 - b.y0) * zk;
-      const inside = !!r.col || (!r.ring && hs >= Math.min(h, T.nameH + 2 * T.noteH) + 26 && ws >= Math.min(w, 150) + 18);
-      let ax = b.cx * zk, ay = r.col ? b.cy * zk - hc / 2 + 2 : inside ? b.y0 * zk + 14 : b.y0 * zk - h - 3;   // collapsed: centred in it, as a region's name
-      if (!inside && top !== undefined && ay < top + 4) ay = b.y1 * zk + 4;   // no room above (the top of the view): under it
-      // the nearest free spot: up and down in 13 px steps, then sideways
-      const clash = (dx, dy) => (top !== undefined && ay + dy < top + 2) || placed.some(p => Math.abs(p.x - ax - dx) < (p.w + w) / 2 + 8 && ay + dy < p.y + p.h + 4 && ay + dy + h > p.y - 4);
-      let dx = 0, dy = 0;
-      if (!r.col && clash(0, 0)) {   // a collapsed mark's name stays in its circle; the others move round it
-        let best = null;
-        for (const cx of [0, -1, 1, -2, 2]) for (let k = -8; k <= 8; k++) {
-          const ox = cx * (w / 2 + 30), oy = k * 13, cost = Math.abs(ox) * 0.7 + Math.abs(oy);
-          if ((!best || cost < best[2]) && !clash(ox, oy)) best = [ox, oy, cost];
+      const clashAt = (x, y, w, h) => (top !== undefined && y < top + 2) || placed.some(p => Math.abs(p.x - x) < (p.w + w) / 2 + 8 && y < p.y + p.h + 4 && y + h > p.y - 4);
+      let S, ax, ay, inside, dy = 0;
+      if (r.hull && !r.col) {
+        // the bottom level's regions: the label stays on its own mark — inside it (the note wrapped to the mark's own
+        // width, three short lines, a little above its middle), else just above it, else just under it; with its note
+        // if one of those is free, else bare (the note is on hover and in the card); only then nudged. A hovered label
+        // takes its first spot regardless, over the others.
+        const innerN = Math.max(20, Math.min(T.gloss, Math.floor((ws - 16) / T.noteW)));   // a name may run up to ~20 px past the rim each side
+        const tries = [];
+        for (const withNote of open || !note ? [true] : [true, false]) {
+          const Si = setLines(withNote, innerN, 3, ws + 20), So = setLines(withNote);
+          if (hs >= Si.h + 18 && ws + 44 >= Si.w) tries.push([Si, b.cx * zk, b.y0 * zk + Math.max(10, 0.3 * (hs - Si.h)), true]);
+          tries.push([So, b.cx * zk, b.y0 * zk - So.h - 3, false], [So, b.cx * zk, b.y1 * zk + 4, false]);
         }
-        if (best) [dx, dy] = best;
+        for (const [S1, x, y, inn] of tries) if (open || !clashAt(x, y, S1.w, S1.h)) { S = S1; ax = x; ay = y; inside = inn; break; }
+        if (!S) {
+          S = setLines(false); ax = b.cx * zk; ay = b.y0 * zk - S.h - 3; inside = false;
+          let best = null;
+          for (const cx of [0, -1, 1]) for (let k = -6; k <= 6; k++) {
+            const ox = cx * (S.w / 2 + 24), oy = k * 13, cost = Math.abs(ox) * 0.7 + Math.abs(oy);
+            if ((!best || cost < best[2]) && !clashAt(ax + ox, ay + oy, S.w, S.h)) best = [ox, oy, cost];
+          }
+          if (best) { ax += best[0]; dy = best[1]; }
+        }
+      } else {
+        S = setLines(true);
+        const { w, h } = S;
+        const hc = r.col ? T.nameH + 13 : h;   // the part centred in a collapsed mark
+        inside = !!r.col || (!r.ring && hs >= Math.min(h, T.nameH + 2 * T.noteH) + 26 && ws >= Math.min(w, 150) + 18);
+        ax = b.cx * zk; ay = r.col ? b.cy * zk - hc / 2 + 2 : inside ? b.y0 * zk + 14 : b.y0 * zk - h - 3;   // collapsed: centred in it, as a region's name
+        if (!inside && top !== undefined && ay < top + 4) ay = b.y1 * zk + 4;   // no room above (the top of the view): under it
+        // the nearest free spot: up and down in 13 px steps, then sideways
+        if (!r.col && clashAt(ax, ay, w, h)) {   // a collapsed mark's name stays in its circle; the others move round it
+          let best = null;
+          for (const cx of [0, -1, 1, -2, 2]) for (let k = -8; k <= 8; k++) {
+            const ox = cx * (w / 2 + 30), oy = k * 13, cost = Math.abs(ox) * 0.7 + Math.abs(oy);
+            if ((!best || cost < best[2]) && !clashAt(ax + ox, ay + oy, w, h)) best = [ox, oy, cost];
+          }
+          if (best) { ax += best[0]; dy = best[1]; }
+        }
       }
-      ax += dx;
+      const { lines, w, h, gap } = S, hc = r.col ? T.nameH + 13 : h;
       placed.push({ x: ax, y: ay + dy, w, h });
       let y = 0;
       for (const q of lines) { y += q.h; q.y = y - 4; }
@@ -846,16 +928,25 @@ async function viewField(p) {
         rows.push({ m, blob: { d: colLine(pl.shape), b }, lb: b, col: pl.col, hd: colLine(pl.ushape) });
         continue;
       }
-      const blob = markBlob(pl);
+      const shape = opts.bubble ? markHull : markBlob;   // the bottom level: one smooth region per mark
+      const blob = shape(pl);
       if (!blob) continue;
       // under the loupe the dots (and so the bubble) move; the label is laid on the bubble as it is without the loupe
       const moved = pl.some(q => q.length > 3 && (q[3] !== q[0] || q[4] !== q[1] || (q.length > 5 && q[5] !== q[2])));
-      const still = moved ? markBlob(pl.map(q => [q[3], q[4], q[5] ?? q[2]])) : null;
-      rows.push({ m, blob, lb: still ? still.b : blob.b, ring: !!pl.ring, hd: still ? still.d : blob.d });
+      const still = moved ? shape(pl.map(q => [q[3], q[4], q[5] ?? q[2]])) : null;
+      // a stray few of a mark that lives mostly elsewhere: drawn faint, named only while hovered
+      const minor = !!opts.bubble && pl.length < 4 && pl.length < 0.5 * markIdx(m).length;
+      rows.push({ m, blob, lb: still ? still.b : blob.b, ring: !!pl.ring, minor, hull: !!opts.bubble, hd: still ? still.d : blob.d });
     }
     const key = r => String(r.m.id);
     const state = (sel, r) => sel.classed('prop', d => r(d).m.state === 'proposed').classed('on', d => markOn(r(d).m)).classed('lift', d => MARK.lift.has(r(d).m.id));
-    state(gB.selectAll('path.fmb').data(rows, key).join('path').attr('class', 'fmb').attr('d', r => r.blob.d), r => r).classed('ring', r => r.ring).classed('col', r => !!r.col);
+    // largest first, so a smaller mark lies over a larger one; each is a casing (a band of the background, so where two
+    // rims cross one passes cleanly over the other) and then its fill and rim
+    const order = rows.slice().sort((a, b) => (b.lb.area || 0) - (a.lb.area || 0));
+    gB.selectAll('path.fmb').filter(function () { return !this.parentNode.classList.contains('fmg'); }).remove();   // drawn before the casing
+    const mg = gB.selectAll('g.fmg').data(order, key).join(e => { const g2 = e.append('g').attr('class', 'fmg'); g2.append('path').attr('class', 'fmk'); g2.append('path').attr('class', 'fmb'); return g2; }).order();
+    mg.select('path.fmk').attr('d', r => r.blob.d).classed('ring', r => r.ring).classed('minor', r => r.minor);
+    state(mg.select('path.fmb').attr('d', r => r.blob.d), r => r).classed('ring', r => r.ring).classed('col', r => !!r.col).classed('minor', r => r.minor).classed('hull', !!opts.bubble);
     // opts.bubble (the bottom level): the inside of a bubble is a target too — an invisible copy of it under the dots (so a
     // dot keeps the pointer), drawn as the bubble is without the loupe: the loupe leaves the point under the cursor where
     // it is, so the cursor is tested against the sheet as it lies there. The smaller of two overlapping is on top.
@@ -1867,32 +1958,40 @@ async function viewField(p) {
         const at = cur.nodes ? new Map(cur.nodes.map(d => [d.path, d])) : null;
         const bottom = cur.kind === 'items' && cur.gUnder;
         if (bottom) gMB.selectAll('*').remove();
-        const ringN = new Map();   // circle → how many marks already ring it (each next one a step further out)
         drawMarkSvg(bottom ? cur.gUnder : gMB, gML, m => {
-          const out = [], seen = new Set();
+          const out = [];
           if (cur.kind === 'items') {
             for (const i of markIdx(m)) { const d = cur.byI && cur.byI.get(i); if (d && d.w >= 0.1) out.push([d.x, d.y, (d.rr || d.dr) + 9 / zk, d.ux ?? d.x, d.uy ?? d.y, d.dr / Math.sqrt(Math.max(1, zk)) * (d.cz || 1) + 9 / zk]); }
             const cs = cur.col && cur.col.get(m.id);
             if (cs && cs.v > 0.02 && out.length) { out.shape = cs.pts; out.ushape = cs.upts; out.col = cs; }
             return out;
           }
-          for (const i of markIdx(m)) {
-            if (!(WT[i] >= 0.1)) continue;
-            const anc = ancestors(cOf(F.points[i]));
-            if (lvl && anc[lvl - 1] !== cur.path) continue;
-            const d = at && at.get(anc[lvl]);
-            if (!d || d.r < 3) continue;
-            const pd = d.pdotBy && d.pdotBy.get(i);
-            if (pd) out.push([d.x + pd[0], d.y + pd[1], 5 / zk]);
-            // a circle that shows no dots: the mark rings it, just outside its edge
-            else if (!d.pdotBy && !seen.has(d.path)) { seen.add(d.path); const k = ringN.get(d.path) || 0; ringN.set(d.path, k + 1); out.push([d.x, d.y, d.r + (6 + 5 * k) / zk]); out.ring = true; }
-          }
-          return out;
+          return out;   // above the bottom level a mark draws no outline of its own (the counts below)
         }, zk, full => { if (full && cur && cur.hover) cur.hover(); marksSoon(); }, -ZT.y,
           [...(cur.nodes || []).filter(d => d.r >= 18).map(d => ({ x: d.x * zk, y: (d.y - 28) * zk, w: Math.min(d.r * 1.72, 190) * zk, h: 66 * zk })),   // the circles' names
            { x: W / 2 - ZT.x, y: 4 - ZT.y, w: 440, h: 24 }, { x: W / 2 - ZT.x, y: H - 44 - ZT.y, w: 440, h: 26 }],   // the poles, top and bottom
           // at the bottom a click on a mark's name collapses it (or opens it out); shift-click opens its card
           cur.kind === 'items' ? { bubble: true, click: (m, ev) => ev.shiftKey ? markOpen(m.id) : markColSet(m.id, !markCol(m.id)), hint: m => markCol(m.id) ? 'click: open it out · shift-click: its card' : 'click: collapse · shift-click: its card' } : {});
+        // Above the bottom level (Ben, Nov 20: the rings round the regions "just get noisy and too much … im making
+        // potentially a lot of them in subregions"): no outline per mark; a circle that holds members of any marks gets
+        // one small count on its lower right rim.
+        const held = new Map();   // circle → how many marks have members in it
+        if (!bottom && at) for (const m of marksShown()) {
+          const hit = new Set();
+          for (const i of markIdx(m)) {
+            if (!(WT[i] >= 0.1)) continue;
+            const anc = ancestors(cOf(F.points[i]));
+            if (lvl && anc[lvl - 1] !== cur.path) continue;
+            const d = at.get(anc[lvl]);
+            if (d && d.r >= 3) hit.add(d);
+          }
+          for (const d of hit) held.set(d, (held.get(d) || 0) + 1);
+        }
+        const badge = n => `${n} mark${n === 1 ? '' : 's'}`;
+        const bd = gMB.selectAll('g.fmbadge').data([...held], e => e[0].path).join(e => { const g2 = e.append('g').attr('class', 'fmbadge'); g2.append('rect'); g2.append('text'); return g2; });
+        bd.attr('transform', ([d]) => `translate(${(d.x + d.r * 0.74).toFixed(1)},${(d.y + d.r * 0.74).toFixed(1)}) scale(${(1 / zk).toFixed(4)})`);
+        bd.select('text').attr('y', 3.5).text(([, n]) => badge(n));
+        bd.select('rect').attr('x', ([, n]) => -(badge(n).length * 5.9 + 14) / 2).attr('y', -8).attr('height', 16).attr('rx', 8).attr('width', ([, n]) => badge(n).length * 5.9 + 14);
         // the legend says what a mark's name does, when there are names to click
         const lgd = main.querySelector('#flegend');
         if (lgd) {
@@ -2965,7 +3064,7 @@ async function viewField(p) {
       const ring = scene.append('circle').attr('class', 'bloupe').attr('display', 'none');
       const gBub = scene.append('g').attr('class', 'bbubs');
       const bubbles = makeBubbles(gBub, () => cur === st && !!FOC && loupeOn());
-      // Marked dots drawn a little toward their mark's middle (MARK_PULL), eased in over 0.7 s when the level opens or
+      // Marked dots squeezed toward their mark’s middle (the glom, MARK_GLOM), eased in over 0.7 s when the level opens or
       // the set of marks changes. The offsets are recomputed from the dots' own places on every frame, so they follow the
       // slab and the tilt without lag; a dot in two marks takes the average of the two pulls, so it never flickers.
       let pullT = 0, pullSig = '', pullRaf = 0;
@@ -2984,8 +3083,17 @@ async function viewField(p) {
           if (k <= 0.001) continue;
           const mem = markIdx(m).map(i => byI.get(i)).filter(d => d && d.w >= 0.1);
           if (mem.length < 2) continue;
+          // the glom (Ben, Nov 20: "glom them together more … sacrifice more spatial relation within the mark"): each
+          // member keeps its direction from the mark's middle, its distance squeezed to r0·tanh(ρ/r0) — the near ones
+          // hardly move, the far ones come in most, none ends further than r0. r0: the members' median distance, or the
+          // room the dots need side by side (area ≈ n dots of diameter 2.5 dr), whichever is larger.
           const mx = d3.mean(mem, d => d.bx), my = d3.mean(mem, d => d.by);
-          for (const d of mem) { const a = acc.get(d.i) || [0, 0, 0]; a[0] += k * (mx - d.bx) * MARK_PULL; a[1] += k * (my - d.by) * MARK_PULL; a[2]++; acc.set(d.i, a); }
+          const rho = mem.map(d => Math.hypot(d.bx - mx, d.by - my));
+          const r0 = Math.max(MARK_GLOM * (d3.median(rho) || 1), 1.3 * d3.mean(mem, d => d.dr) * Math.sqrt(mem.length));
+          mem.forEach((d, j) => {
+            const q = rho[j] > 1e-9 ? r0 * Math.tanh(rho[j] / r0) / rho[j] : 1;
+            const a = acc.get(d.i) || [0, 0, 0]; a[0] += k * (mx + (d.bx - mx) * q - d.bx); a[1] += k * (my + (d.by - my) * q - d.by); a[2]++; acc.set(d.i, a);
+          });
         }
         return acc;
       };
