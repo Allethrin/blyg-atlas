@@ -266,12 +266,19 @@ body.ffull:not(.fbare) .ffab [data-fab="drift"] { display: none; }
 .fmb { fill: url(#fmarkfill); stroke: var(--mark); stroke-opacity: .45; stroke-width: 1; vector-effect: non-scaling-stroke; transition: stroke-opacity .18s, fill-opacity .18s; }
 .fmb.prop { stroke-dasharray: 2 3; stroke-opacity: .7; }
 .fmb.ring { fill: none; stroke-opacity: .7; stroke-width: 1.3; }   /* round a whole circle (above the bottom level): a ring, no fill, so several marks on one cluster never stack into a wash over its colour */
+.fmb.col { fill: url(#fmarkfillc); stroke-opacity: .7; stroke-width: 1.2; }   /* collapsed: a region of its own */
 .fmb.lift { stroke-opacity: .75; }
 .fmb.on { stroke-opacity: .95; stroke-width: 1.4; filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .16)); }
 @media (prefers-color-scheme: dark) { .fmb.on { filter: drop-shadow(0 3px 9px rgba(0, 0, 0, .55)); } }
 /* its words, laid on the map: the name in spaced capitals, the note as an italic gloss; a plate behind them only
    while hovered, when the whole note shows */
-.fml { pointer-events: all; cursor: pointer; }
+.fml { cursor: pointer; }
+/* only the name takes the pointer at rest, so a gloss or a collapsed mark's centred label never hides the dots under it;
+   while hovered the whole block (plate and note) holds the hover */
+.fml .fmplate, .fml text { pointer-events: none; }
+.fml .fmhit { fill: transparent; pointer-events: all; cursor: pointer; }
+.fmbhit { fill: transparent; stroke: none; pointer-events: fill; cursor: pointer; }   /* a bubble's inside, at the bottom level: a click collapses it */
+.fml.on .fmplate { pointer-events: all; }
 .fml text { text-anchor: middle; font-family: Georgia, "Iowan Old Style", serif; paint-order: stroke; stroke: var(--bg); stroke-linejoin: round; }
 .fml .mn { font-size: 10.5px; font-weight: 600; letter-spacing: .16em; fill: var(--mark); stroke-width: 3.4px; stroke-opacity: .9; }
 .fml .mt { font-size: 11.5px; font-style: italic; fill: var(--fg); fill-opacity: .78; stroke-width: 3px; stroke-opacity: .85; }
@@ -280,6 +287,12 @@ body.ffull:not(.fbare) .ffab [data-fab="drift"] { display: none; }
 .fml.on .fmplate { fill-opacity: .9; stroke-opacity: .35; }
 .fml.on .mt { fill-opacity: .95; }
 .fml.on .mn { fill: var(--fg); }
+.fml .mc { font: 10px ui-monospace, Menlo, monospace; fill: var(--mute); stroke-width: 3px; letter-spacing: .04em; }   /* a collapsed mark's count */
+.fml .mh { font-size: 10.5px; fill: var(--mark); stroke-width: 3px; }   /* what a click does (on hover) */
+.fml.col .mn { font-size: 11px; letter-spacing: .1em; }   /* collapsed: a little tighter, so it sits inside its circle */
+.fml.col:not(.on) text { stroke-opacity: .45; }   /* centred in a collapsed mark: a lighter halo, so its dots show through the words */
+.fmcolrow { display: flex; align-items: center; gap: 6px; margin: 8px 0 2px; }
+.fmcolrow input[type=range] { flex: 1; accent-color: var(--mark); }
 .fmrow { padding: 5px 0 5px 17px; border-bottom: 1px solid var(--line); position: relative; }
 .fmrow i { position: absolute; left: 2px; top: 10px; width: 8px; height: 8px; border: 1.5px solid var(--mark); border-radius: 50%; }
 .fmrow.prop i { border-style: dashed; }
@@ -309,3 +322,5 @@ body.ffull:not(.fbare) .ffab [data-fab="drift"] { display: none; }
 .fmn { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .fmn.agent .fmnt { font-style: italic; }
 .fmnotes textarea { margin-top: 6px; }
+
+.fmleg { color: var(--mark); }

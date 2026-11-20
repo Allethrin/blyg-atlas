@@ -250,10 +250,22 @@ function cardClose(card) {
 // the side-panel list live in viewField; the cards are here, because like the reader cards they outlive a re-render.
 // Agent proposals (state 'proposed') are drawn dashed until the reader keeps or discards them.
 let MARKS = null;   // /api/marks, reloaded whenever the field is drawn and after every change
-const MARK = { on: false, hl: null, hov: null, lift: new Set(), pending: null, pendingView: null, refresh: () => {}, go: null };
+const MARK = { on: false, hl: null, hov: null, lab: false, geomHover: false, lift: new Set(), pending: null, pendingView: null, refresh: () => {}, go: null };
 const MCARDS = new Map();   // mark id → its open card
 async function marksLoad() { try { MARKS = (await api('/marks')).marks || []; } catch { MARKS = []; } return MARKS; }
 const markName = m => String((m && m.name) || '').trim() || 'untitled mark';
+// Collapsing a mark (the tour's bottom level; display only — see collapseOf): per mark, whether it is collapsed and by
+// how much, kept in this browser. MARK_COLLAPSE is the amount a mark collapses by unless its card's slider says otherwise
+// (0 = its own shape, 1 = a full circle); MARK_R sizes the circle, per √member, in the level's own px.
+const MARK_COLLAPSE = 0.75, MARK_R = 11;
+const MCOL = (() => { try { const j = JSON.parse(localStorage.markCollapse || '{}'); return j && typeof j === 'object' ? j : {}; } catch { return {}; } })();
+const markColAmt = id => { const e = MCOL[id]; return e && e[1] > 0 ? e[1] : MARK_COLLAPSE; };
+const markCol = id => { const e = MCOL[id]; return e && e[0] ? markColAmt(id) : 0; };   // the amount it is collapsed by now (0: open)
+function markColSet(id, on, amt) {
+  MCOL[id] = [on ? 1 : 0, +(amt ?? markColAmt(id)).toFixed(2)];
+  try { localStorage.markCollapse = JSON.stringify(MCOL); } catch { /* private window: this page only */ }
+  MARK.refresh();
+}
 const marksChanged = () => marksLoad().then(() => MARK.refresh());
 // the card that names a fresh lasso: `items` are field points, `gesture` and `view` go to the server as they are
 function markSaveCard(items, gesture, view, x, y, onDone) {
@@ -382,6 +394,7 @@ function markOpen(id, x, y) {
       <input class="fmname" type="text" maxlength="160" placeholder="name" value="${esc(m.name || '')}">
       <textarea class="fmnote" rows="3" placeholder="note">${esc(m.note || '')}</textarea>
       <div class="fmact"><button data-save disabled>save</button><button data-go title="${view ? 'back to the view it was made in (mode, level, plane, hidden blygs)' : 'fit the map to its members'}">go there</button><button data-del class="fmdel">delete</button><span class="fmmsg small muted"></span></div>
+      <div class="fmcolrow small"><button data-col title="draw it as one region on the map's bottom level, the space round it stretched to match (display only; also: click its name on the map)">${markCol(id) ? 'open it out' : 'collapse'}</button><input type="range" min="0.2" max="1" step="0.05" value="${markColAmt(id)}" data-colamt title="how far toward a circle: 1 is a full circle"><span class="muted" data-colv>${markColAmt(id).toFixed(2)}</span></div>
       <details class="fmshape" open><summary>shape</summary><pre>${esc(r.shape_text || '(no shape block)')}</pre></details>
       <details class="fmmembers" open><summary>members · ${members.length}</summary>${members.slice(0, CAP).map((x, j) => `<div class="fmm"><a href="#" data-j="${j}">${esc(x.title || '(untitled)')}</a> <span class="muted small">${esc(x.author || short(x.origin))}${x.created ? ' · ' + fmtDate(x.created) : ''}</span></div>`).join('')}${members.length > CAP ? `<div class="muted small">+${members.length - CAP} more</div>` : ''}</details>
       <details class="fmnotes" open><summary>notes · ${notes.length}</summary>${notes.map(n => `<div class="fmn ${n.author === 'agent' ? 'agent' : ''}"><div class="small muted">${n.author === 'agent' ? 'agent' : 'you'}${n.at ? ' · ' + fmtWhen(n.at) : ''}</div><div class="fmnt">${esc(n.text || '')}</div></div>`).join('')}
@@ -404,6 +417,10 @@ function markOpen(id, x, y) {
       $('[data-discard]').onclick = del;
     }
     body.querySelectorAll('.fmm a[data-j]').forEach(a => a.onclick = ev => { ev.preventDefault(); const x = members[Number(a.dataset.j)]; if (x) readerOpen(x.origin, x.id, 'mark'); });
+    // collapse: the button toggles it; the slider sets how far (and collapses it, so the change shows)
+    const $col = $('[data-col]'), $amt = $('[data-colamt]');
+    $col.onclick = () => { markColSet(id, !markCol(id)); $col.textContent = markCol(id) ? 'open it out' : 'collapse'; };
+    $amt.oninput = () => { const v = Number($amt.value); $('[data-colv]').textContent = v.toFixed(2); markColSet(id, true, v); $col.textContent = 'open it out'; };
     $('[data-addnote]').onclick = () => { const t = $('.fmadd').value.trim(); if (t) act(async () => { await post('/mark/' + encodeURIComponent(id) + '/note', { text: t }); await load(); }); };
   }
   load();
@@ -559,7 +576,7 @@ async function viewField(p) {
   const L = fieldState.layers;
   if (!('marks' in L)) L.marks = true;   // layers added Nov 19: on unless turned off
   if (!('notes' in L)) L.notes = true;   // the marks' notes, as glosses under their names
-  MARK.on = false;
+  MARK.on = false; MARK.geomHover = false; MARK.lab = false; MARK.hov = null;
   const layerNames = (mode === 'plane' ? ['regions', 'cites', 'pulse', 'marks', 'notes'] : ['cites', 'pulse', 'marks', 'notes']).filter(k => OVERLAYS || k !== 'pulse');
   main.innerHTML = `<div class="field">
     <span class="fqchip fqfloat" data-qchip hidden></span>
@@ -701,7 +718,7 @@ async function viewField(p) {
   // contour of the field Σ rᵢ²/dᵢ² over its members — each place [x, y, r] alone is a disc of radius r, and near ones
   // melt together as metaballs do — sampled on a coarse grid (~3k cells) and its rings smoothed. Members far apart give
   // islands: that is where they are. The largest island carries the label.
-  const blobLine = d3.line().curve(d3.curveBasisClosed);
+  const blobLine = d3.line().curve(d3.curveBasisClosed), colLine = d3.line().curve(d3.curveCatmullRomClosed.alpha(0.5));
   // Display only, a distortion on purpose: at the tour's bottom level a marked dot is drawn this share of the way toward
   // its mark's middle, so the set reads as a set. Item positions, the layout, the lasso and every number about the mark
   // are untouched; a dot in two marks takes the average of the two pulls. 0 turns it off.
@@ -742,6 +759,16 @@ async function viewField(p) {
   // while the label is hovered). Laid inside the bubble's upper part when the bubble holds them, over it when it does
   // not; then nudged apart, the biggest marks keeping their places. Sizes in screen px; positions in the drawing's own
   // units, under a zoom zk.
+  // a name's width as it is set: spaced capitals, 10.5 px at .16em; in a collapsed mark 11 px at .1em (measured, so the
+  // circle can be sized to hold it)
+  const markTextW = (() => {
+    const cx = document.createElement('canvas').getContext('2d'), memo = new Map();
+    return (t, col) => {
+      const k = (col ? 'c' : 'o') + t;
+      if (!memo.has(k)) { const fs = col ? 11 : 10.5; cx.font = `600 ${fs}px Georgia, "Iowan Old Style", serif`; memo.set(k, cx.measureText(t).width + t.length * fs * (col ? 0.1 : 0.16)); }
+      return memo.get(k);
+    };
+  })();
   const MARK_TYPE = { name: 10.5, nameW: 8.3, nameH: 15, note: 11.5, noteW: 5.7, noteH: 14.5, gloss: 46, glossLines: 2, full: 54, fullLines: 14 };
   function wrapLines(s, n, max) {
     const out = [];
@@ -758,24 +785,31 @@ async function viewField(p) {
   const markOn = m => MARK.hl === m.id || MARK.hov === m.id;   // hovered, or its card or row is
   // top: the view's upper edge, in screen px of the drawing (a label flips under its mark there); keep: boxes to stay off
   // ({ x: centre, y: top, w, h }, screen px of the drawing): the circles' own names
-  function markLabels(rows, zk, top, keep = []) {
+  function markLabels(rows, zk, top, keep = [], hint) {
     const T = MARK_TYPE, placed = [...keep], out = [];
     for (const r of [...rows].sort((a, b) => (b.lb || b.blob.b).area - (a.lb || a.blob.b).area)) {
       const b = r.lb || r.blob.b, m = r.m, open = MARK.hov === m.id;
       const name = markName(m).toUpperCase();
       const note = L.notes !== false && m.note ? String(m.note).trim() : '';
       const lines = [{ t: name, c: 'mn', h: T.nameH }];
+      if (r.col) lines.push({ t: `∙ ${r.col.n} ∙`, c: 'mc', h: 13 });   // collapsed: its count, as a region's circle has
+      // collapsed: the name and count sit in the middle of the circle, and the note hangs just under its lower edge
+      const gap = r.col && note ? Math.max(0, (b.y1 - b.cy) * zk - (T.nameH + 13) / 2 + 6) : 0;
+      if (gap) lines.push({ t: '', c: 'gap', h: gap });
       // round a whole circle (above the bottom level) the circle's own name is inside it: the mark's words go outside, one line of gloss
       if (note) for (const t of wrapLines(note, open ? T.full : T.gloss, open ? T.fullLines : r.ring ? 1 : T.glossLines)) lines.push({ t, c: 'mt', h: T.noteH });
-      const w = Math.max(name.length * T.nameW, ...lines.slice(1).map(q => q.t.length * T.noteW)), h = d3.sum(lines, q => q.h);
+      const hn = open && hint ? hint(m) : '';
+      if (hn) lines.push({ t: hn, c: 'mh', h: 14 });
+      const w = Math.max(markTextW(name, !!r.col), ...lines.slice(1).map(q => q.t.length * T.noteW)), h = d3.sum(lines, q => q.h);
+      const hc = r.col ? T.nameH + 13 : h;   // the part centred in a collapsed mark
       const ws = (b.x1 - b.x0) * zk, hs = (b.y1 - b.y0) * zk;
-      const inside = !r.ring && hs >= Math.min(h, T.nameH + 2 * T.noteH) + 26 && ws >= Math.min(w, 150) + 18;
-      let ax = b.cx * zk, ay = inside ? b.y0 * zk + 14 : b.y0 * zk - h - 3;
+      const inside = !!r.col || (!r.ring && hs >= Math.min(h, T.nameH + 2 * T.noteH) + 26 && ws >= Math.min(w, 150) + 18);
+      let ax = b.cx * zk, ay = r.col ? b.cy * zk - hc / 2 + 2 : inside ? b.y0 * zk + 14 : b.y0 * zk - h - 3;   // collapsed: centred in it, as a region's name
       if (!inside && top !== undefined && ay < top + 4) ay = b.y1 * zk + 4;   // no room above (the top of the view): under it
       // the nearest free spot: up and down in 13 px steps, then sideways
       const clash = (dx, dy) => (top !== undefined && ay + dy < top + 2) || placed.some(p => Math.abs(p.x - ax - dx) < (p.w + w) / 2 + 8 && ay + dy < p.y + p.h + 4 && ay + dy + h > p.y - 4);
       let dx = 0, dy = 0;
-      if (clash(0, 0)) {
+      if (!r.col && clash(0, 0)) {   // a collapsed mark's name stays in its circle; the others move round it
         let best = null;
         for (const cx of [0, -1, 1, -2, 2]) for (let k = -8; k <= 8; k++) {
           const ox = cx * (w / 2 + 30), oy = k * 13, cost = Math.abs(ox) * 0.7 + Math.abs(oy);
@@ -787,7 +821,7 @@ async function viewField(p) {
       placed.push({ x: ax, y: ay + dy, w, h });
       let y = 0;
       for (const q of lines) { y += q.h; q.y = y - 4; }
-      out.push({ r, x: ax / zk, y: (ay + dy) / zk, lines, inside, w, h, open });
+      out.push({ r, x: ax / zk, y: (ay + dy) / zk, lines, inside, w, h, open, py: gap ? hc + gap - 4 : 0, nw: markTextW(name, !!r.col) });   // py: where the plate starts (under a collapsed mark's circle)
     }
     return out;
   }
@@ -795,36 +829,77 @@ async function viewField(p) {
   function markDefs(defs) {
     const gr = defs.append('radialGradient').attr('id', 'fmarkfill').attr('cx', '50%').attr('cy', '45%').attr('r', '62%');
     gr.selectAll('stop').data([[0, 0.2], [0.65, 0.12], [1, 0.07]]).join('stop').attr('offset', s => s[0]).style('stop-color', 'var(--mark)').style('stop-opacity', s => s[1]);
+    // a collapsed mark, a region of its own: a little stronger, still soft enough that two overlapping do not wash out
+    const gc = defs.append('radialGradient').attr('id', 'fmarkfillc').attr('cx', '50%').attr('cy', '42%').attr('r', '58%');
+    gc.selectAll('stop').data([[0, 0.3], [0.7, 0.2], [1, 0.13]]).join('stop').attr('offset', s => s[0]).style('stop-color', 'var(--mark)').style('stop-opacity', s => s[1]);
   }
   // The SVG drawing (tour and blobs): the bubbles into gB (under the dots at the bottom level), the labels into gL, each
   // keyed by mark and updated in place. `places(m)` in the group's units; `redraw` asks the presentation for a frame.
-  function drawMarkSvg(gB, gL, places, zk, redraw, top = 0, keep = []) {
+  // opts.click(m, ev): what a click on a label does (default: open the mark's card); opts.hint: a line shown on hover
+  function drawMarkSvg(gB, gL, places, zk, redraw, top = 0, keep = [], opts = {}) {
     const rows = [];
     for (const m of marksShown()) {
-      const pl = places(m), blob = markBlob(pl);
+      const pl = places(m);
+      if (pl.shape) {   // collapsed: its outline is given, and its label sits in its middle
+        const u = pl.ushape, b = { x0: d3.min(u, q => q[0]), y0: d3.min(u, q => q[1]), x1: d3.max(u, q => q[0]), y1: d3.max(u, q => q[1]), cx: d3.mean(u, q => q[0]), cy: d3.mean(u, q => q[1]) };
+        b.area = (b.x1 - b.x0) * (b.y1 - b.y0);
+        rows.push({ m, blob: { d: colLine(pl.shape), b }, lb: b, col: pl.col, hd: colLine(pl.ushape) });
+        continue;
+      }
+      const blob = markBlob(pl);
       if (!blob) continue;
       // under the loupe the dots (and so the bubble) move; the label is laid on the bubble as it is without the loupe
-      const moved = pl.some(q => q.length > 3 && (q[3] !== q[0] || q[4] !== q[1]));
-      const still = moved ? markBlob(pl.map(q => [q[3], q[4], q[2]])) : null;
-      rows.push({ m, blob, lb: still ? still.b : blob.b, ring: !!pl.ring });
+      const moved = pl.some(q => q.length > 3 && (q[3] !== q[0] || q[4] !== q[1] || (q.length > 5 && q[5] !== q[2])));
+      const still = moved ? markBlob(pl.map(q => [q[3], q[4], q[5] ?? q[2]])) : null;
+      rows.push({ m, blob, lb: still ? still.b : blob.b, ring: !!pl.ring, hd: still ? still.d : blob.d });
     }
     const key = r => String(r.m.id);
     const state = (sel, r) => sel.classed('prop', d => r(d).m.state === 'proposed').classed('on', d => markOn(r(d).m)).classed('lift', d => MARK.lift.has(r(d).m.id));
-    state(gB.selectAll('path.fmb').data(rows, key).join('path').attr('class', 'fmb').attr('d', r => r.blob.d), r => r).classed('ring', r => r.ring);
-    const labs = markLabels(rows, zk, top, keep);
+    state(gB.selectAll('path.fmb').data(rows, key).join('path').attr('class', 'fmb').attr('d', r => r.blob.d), r => r).classed('ring', r => r.ring).classed('col', r => !!r.col);
+    // opts.bubble (the bottom level): the inside of a bubble is a target too — an invisible copy of it under the dots (so a
+    // dot keeps the pointer), drawn as the bubble is without the loupe: the loupe leaves the point under the cursor where
+    // it is, so the cursor is tested against the sheet as it lies there. The smaller of two overlapping is on top.
+    if (opts.bubble) {
+      gB.selectAll('path.fmbhit').data(rows.slice().sort((a, b) => (b.lb.area || 0) - (a.lb.area || 0)), key)
+        .join(e => e.append('path').attr('class', 'fmbhit').on('click', (ev, r) => { ev.stopPropagation(); (opts.click || (m => markOpen(m.id)))(r.m, ev); }))
+        .attr('d', r => r.hd).order();
+    } else gB.selectAll('path.fmbhit').remove();
+    const labs = markLabels(rows, zk, top, keep, opts.hint);
     const lg = gL.selectAll('g.fml').data(labs, l => key(l.r)).join(e => {
       const g2 = e.append('g').attr('class', 'fml');
       g2.append('rect').attr('class', 'fmplate');
       g2.append('text');
-      g2.on('click', (ev, l) => { ev.stopPropagation(); markOpen(l.r.m.id); })
-        .on('mouseenter', (ev, l) => { MARK.hov = l.r.m.id; redraw(true); })
-        .on('mouseleave', (ev, l) => { if (MARK.hov === l.r.m.id) { MARK.hov = null; redraw(true); } });
+      g2.append('g').attr('class', 'fmhits');   // what takes the pointer: a box round each line as the browser drew it (below)
+      g2.on('click', (ev, l) => { ev.stopPropagation(); (opts.click || (m => markOpen(m.id)))(l.r.m, ev); })
+        .on('mouseenter', (ev, l) => { if (MARK.geomHover) return; MARK.hov = l.r.m.id; MARK.lab = true; redraw(true); })   // (the tour's bottom level decides hover itself)
+        .on('mouseleave', (ev, l) => { if (MARK.geomHover) return; MARK.lab = false; if (MARK.hov === l.r.m.id) { MARK.hov = null; redraw(true); } });
       return g2;
     });
-    state(lg, l => l.r).classed('in', l => l.inside).attr('transform', l => `translate(${l.x.toFixed(1)},${l.y.toFixed(1)}) scale(${(1 / zk).toFixed(4)})`);
-    lg.select('rect').attr('x', l => -l.w / 2 - 10).attr('y', -4).attr('width', l => l.w + 20).attr('height', l => l.h + 11).attr('rx', 7);
+    state(lg, l => l.r).classed('in', l => l.inside).classed('col', l => !!l.r.col).attr('transform', l => `translate(${l.x.toFixed(1)},${l.y.toFixed(1)}) scale(${(1 / zk).toFixed(4)})`);
+    lg.select('rect.fmplate').attr('x', l => -l.w / 2 - 10).attr('y', l => l.py - 4).attr('width', l => l.w + 20).attr('height', l => l.h - l.py + 11).attr('rx', 7);
     lg.select('text').each(function (l) {
       d3.select(this).selectAll('tspan').data(l.lines).join('tspan').attr('class', q => q.c).attr('x', 0).attr('y', q => q.y).text(q => q.t);
+    });
+    // The pointer's targets, measured from what was drawn (Safari sets the same text wider and lower than Chromium, so a
+    // box worked out from font sizes misses the letters there): per line with words, the span from its first glyph to its
+    // last (getExtentOfChar), padded so the lines of one label touch. The blank line between a collapsed mark's name and
+    // its note gets none, so the dots inside the circle stay reachable.
+    lg.each(function (l) {
+      const text = this.querySelector('text'), boxes = [];
+      let at = 0;
+      for (const q of l.lines) {
+        const n = q.t.length;
+        if (n && q.c !== 'gap') {
+          try {
+            const a = text.getExtentOfChar(at), b = text.getExtentOfChar(at + n - 1);
+            const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x + a.width, b.x + b.width), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y + a.height, b.y + b.height);
+            if (x1 > x0 && y1 > y0) boxes.push([x0 - 6, y0 - 3, x1 - x0 + 12, y1 - y0 + 6]);
+          } catch { /* not laid out yet (hidden): the next draw measures it */ }
+        }
+        at += n;
+      }
+      d3.select(this).select('g.fmhits').selectAll('rect').data(boxes).join('rect').attr('class', 'fmhit')
+        .attr('x', q => q[0]).attr('y', q => q[1]).attr('width', q => q[2]).attr('height', q => q[3]);
     });
   }
   // the marks a dot belongs to, lifted while it is hovered
@@ -1255,7 +1330,7 @@ async function viewField(p) {
             seen.add(path); const k = ringN.get(path) || 0; ringN.set(path, k + 1); out.push([d.x, d.y, d.r * d.s + 6 + 5 * k]); out.ring = true;
           }
           return out;
-        }, 1, marksSoon, 0, cur.kind === 'items' ? [] : cur.lay.nodes.filter(d => d.r >= 15).map(d => ({ x: d.x, y: d.y - 26, w: Math.min(d.r * 1.72, 190), h: 52 })));
+        }, 1, marksSoon, 0, cur.kind === 'items' ? [] : cur.lay.nodes.filter(d => d.r >= 15).map(d => ({ x: d.x, y: d.y - 26, w: Math.min(d.r * 1.72, 190), h: 52 })), { bubble: cur.kind === 'items' });   // a click inside a bubble opens its card, never backs out
       });
     }
     const GAP = 40;                    // the least room between two circles, so every ribbon has some length to show
@@ -1796,7 +1871,9 @@ async function viewField(p) {
         drawMarkSvg(bottom ? cur.gUnder : gMB, gML, m => {
           const out = [], seen = new Set();
           if (cur.kind === 'items') {
-            for (const i of markIdx(m)) { const d = cur.byI && cur.byI.get(i); if (d && d.w >= 0.1) out.push([d.x, d.y, (d.rr || d.dr) + 9 / zk, d.ux ?? d.x, d.uy ?? d.y]); }
+            for (const i of markIdx(m)) { const d = cur.byI && cur.byI.get(i); if (d && d.w >= 0.1) out.push([d.x, d.y, (d.rr || d.dr) + 9 / zk, d.ux ?? d.x, d.uy ?? d.y, d.dr / Math.sqrt(Math.max(1, zk)) * (d.cz || 1) + 9 / zk]); }
+            const cs = cur.col && cur.col.get(m.id);
+            if (cs && cs.v > 0.02 && out.length) { out.shape = cs.pts; out.ushape = cs.upts; out.col = cs; }
             return out;
           }
           for (const i of markIdx(m)) {
@@ -1813,7 +1890,17 @@ async function viewField(p) {
           return out;
         }, zk, full => { if (full && cur && cur.hover) cur.hover(); marksSoon(); }, -ZT.y,
           [...(cur.nodes || []).filter(d => d.r >= 18).map(d => ({ x: d.x * zk, y: (d.y - 28) * zk, w: Math.min(d.r * 1.72, 190) * zk, h: 66 * zk })),   // the circles' names
-           { x: W / 2 - ZT.x, y: 4 - ZT.y, w: 440, h: 24 }, { x: W / 2 - ZT.x, y: H - 44 - ZT.y, w: 440, h: 26 }]);   // the poles, top and bottom
+           { x: W / 2 - ZT.x, y: 4 - ZT.y, w: 440, h: 24 }, { x: W / 2 - ZT.x, y: H - 44 - ZT.y, w: 440, h: 26 }],   // the poles, top and bottom
+          // at the bottom a click on a mark's name collapses it (or opens it out); shift-click opens its card
+          cur.kind === 'items' ? { bubble: true, click: (m, ev) => ev.shiftKey ? markOpen(m.id) : markColSet(m.id, !markCol(m.id)), hint: m => markCol(m.id) ? 'click: open it out · shift-click: its card' : 'click: collapse · shift-click: its card' } : {});
+        // the legend says what a mark's name does, when there are names to click
+        const lgd = main.querySelector('#flegend');
+        if (lgd) {
+          let sp = lgd.querySelector('.fmleg');
+          const show = cur.kind === 'items' && !!gML.select('g.fml').node();
+          if (show && !sp) { sp = document.createElement('span'); sp.className = 'fmleg'; sp.textContent = ' · click a mark\u2019s name to collapse it · shift-click for its card'; lgd.appendChild(sp); }
+          else if (!show && sp) sp.remove();
+        }
       });
     }
     // rim labels: what each direction of the plane means right now (poles), drawn outside the zoom so a pinch leaves them
@@ -2889,29 +2976,137 @@ async function viewField(p) {
         if (u < 1 && !pullRaf) pullRaf = requestAnimationFrame(() => { pullRaf = 0; if (cur === st && scene.node().isConnected) place(); });
         return 1 - Math.pow(1 - u, 3);
       };
-      const pullOffsets = () => {
+      // pull weights: a collapsing mark's pull hands over to its collapse (1 → 0 as it collapses, back as it opens)
+      const pullOffsets = wt => {
         const acc = new Map();
         for (const m of marksShown()) {
+          const k = wt.has(m.id) ? wt.get(m.id) : 1;
+          if (k <= 0.001) continue;
           const mem = markIdx(m).map(i => byI.get(i)).filter(d => d && d.w >= 0.1);
           if (mem.length < 2) continue;
           const mx = d3.mean(mem, d => d.bx), my = d3.mean(mem, d => d.by);
-          for (const d of mem) { const a = acc.get(d.i) || [0, 0, 0]; a[0] += (mx - d.bx) * MARK_PULL; a[1] += (my - d.by) * MARK_PULL; a[2]++; acc.set(d.i, a); }
+          for (const d of mem) { const a = acc.get(d.i) || [0, 0, 0]; a[0] += k * (mx - d.bx) * MARK_PULL; a[1] += k * (my - d.by) * MARK_PULL; a[2]++; acc.set(d.i, a); }
         }
         return acc;
       };
+
+      // ---------------------------------------------------------------- collapsing a mark (Ben, Nov 19: "it collapses them
+      // into a blob … pulls them together into another region basically. But youd still be able to see inside … the
+      // collapse stretches the space sorta. like the projection")
+      // DISPLAY ONLY, like the loupe and the pull: the shape block, the lasso's maths, the layout and every number about a
+      // mark read the real places. A collapsed mark (state per mark in localStorage, amount c, MARK_COLLAPSE by default)
+      // is drawn as a near-circle, and the space round it is a rubber sheet:
+      //   · its boundary along each ray from its centre, R(θ) — where the ray leaves the union of its members' discs, the
+      //     same discs its bubble is drawn round — becomes R'(θ) = (1 − c)·R(θ) + c·r, r a region-sized circle (area ∝
+      //     members);
+      //   · inside, a point's distance is scaled by R'/R (members keep their angle and their order outward);
+      //   · outside, ρ ↦ ρ + (R' − R)·s(u), u = (ρ − R)/(F − R), s(u) = (1 − u)²(1 + 2u), identity beyond F. F − R is at
+      //     least 2|R' − R|, so the map keeps increasing along every ray (s′ ≥ −1.5): nothing crosses anything.
+      // Each map keeps every point on its ray and is increasing along it, so it is one-to-one; several collapsed marks are
+      // applied one after another (by id), and a chain of one-to-one maps cannot fold, however their zones overlap. It works
+      // at the loupe's stage, before the loupe: the loupe then magnifies the warped sheet.
+      const NB = 72, CA = new Map();   // mark id → its collapse animation { from, to, t0, v }
+      let colRaf = 0;
+      const easeIO = u => u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+      // the collapses showing now, by id: { m, v (amount now), k (what is left of its pull) }
+      function collapses() {
+        const now = performance.now(), out = [];
+        let moving = false;
+        for (const m of [...marksShown()].sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))) {
+          const to = markCol(m.id);
+          let a = CA.get(m.id);
+          if (!a) CA.set(m.id, a = { from: to, to, t0: 0, v: to });   // first seen on this level: as it was left, no animation
+          if (a.to !== to) { a.from = a.v; a.to = to; a.t0 = now; }
+          const u = reduce || !a.t0 ? 1 : clamp01((now - a.t0) / 600);
+          a.v = a.from + (a.to - a.from) * easeIO(u);
+          if (u < 1) moving = true;
+          if (a.v > 0.001) out.push({ m, v: a.v, k: Math.max(0, 1 - a.v / Math.max(a.from, a.to, 1e-3)) });
+        }
+        if (moving && !colRaf) colRaf = requestAnimationFrame(() => { colRaf = 0; if (cur === st && scene.node().isConnected) place(); });
+        return out;
+      }
+      const binOf = th => { const f = ((th / TAU) % 1 + 1) % 1 * NB, k0 = Math.floor(f) % NB; return [k0, (k0 + 1) % NB, f - Math.floor(f)]; };
+      const atBin = (A, th) => { const [k0, k1, t] = binOf(th); return A[k0] + (A[k1] - A[k0]) * t; };
+      // one mark's warp, from the dots where they are now (sx, sy): its centre, R and R' per bin, and the map itself
+      function collapseOf(m, v, zk) {
+        const mem = markIdx(m).map(i => byI.get(i)).filter(d => d && d.w >= 0.1);
+        if (!mem.length) return null;
+        const cx = d3.mean(mem, d => d.sx), cy = d3.mean(mem, d => d.sy);
+        const R = new Float64Array(NB).fill(NaN);
+        for (const d of mem) {
+          const dx = d.sx - cx, dy = d.sy - cy, pr = d.dr / Math.sqrt(Math.max(1, zk)) + 9 / zk;   // the bubble's disc round the dot
+          for (let k = 0; k < NB; k++) {
+            const ph = k * TAU / NB, c0 = Math.cos(ph), s0 = Math.sin(ph), t = dx * c0 + dy * s0, e = -dx * s0 + dy * c0;
+            if (Math.abs(e) >= pr) continue;
+            const ex = t + Math.sqrt(pr * pr - e * e);
+            if (ex > 0 && !(R[k] >= ex)) R[k] = ex;
+          }
+        }
+        // rays that miss every disc (a centre in a gap): filled from their neighbours round the circle, then smoothed
+        const have = [...R.keys()].filter(k => R[k] === R[k]);
+        if (!have.length) return null;
+        for (let k = 0; k < NB; k++) if (R[k] !== R[k]) {
+          let a = k, b = k, da = 0, db = 0;
+          while (R[a] !== R[a]) { a = (a + NB - 1) % NB; da++; }
+          while (R[b] !== R[b]) { b = (b + 1) % NB; db++; }
+          R[k] = (R[a] * db + R[b] * da) / (da + db);
+        }
+        const pmin = 9 / zk;
+        for (let pass = 0; pass < 3; pass++) { const T = Float64Array.from(R); for (let k = 0; k < NB; k++) R[k] = Math.max(pmin, 0.25 * T[(k + NB - 1) % NB] + 0.5 * T[k] + 0.25 * T[(k + 1) % NB]); }
+        // r: a region-sized circle — area ∝ members (MARK_R per √member), and at least wide enough to hold its own name, as a
+        // region's circle does (so a small mark opens the space round it rather than shrinking); at most a third of the level
+        const nameR = (markTextW(markName(m).toUpperCase(), true) / 2 + 16) / zk;   // the name as it is set in a collapsed mark, and a margin
+        const r = Math.min(0.32 * R0, Math.max(22 / zk, nameR, MARK_R * Math.sqrt(mem.length)));
+        // the blend toward r can still be narrower than the name (a mark smaller than r): from v ≈ 0.5 the outline holds it
+        const hold = Math.min(nameR, 0.32 * R0) * clamp01((v - 0.2) / 0.3);
+        const Rn = R.map(x => Math.max((1 - v) * x + v * r, hold));
+        const warp = (x, y) => {
+          const dx = x - cx, dy = y - cy, rho = Math.hypot(dx, dy);
+          if (rho < 1e-9) return [x, y];
+          const th = Math.atan2(dy, dx), Rt = atBin(R, th), Rnt = atBin(Rn, th);
+          let q;
+          if (rho < Rt) q = rho * Rnt / Rt;
+          else {
+            const dl = Rnt - Rt, Fr = Math.max(1.5 * Math.max(Rt, Rnt), 2 * Math.abs(dl));
+            const u = (rho - Rt) / Fr;
+            q = u >= 1 ? rho : rho + dl * (1 - u) * (1 - u) * (1 + 2 * u);
+          }
+          return [cx + dx * q / rho, cy + dy * q / rho];
+        };
+        // the dots inside shrink a little with the space they are given (at most to 55%)
+        const Rm = d3.mean(R), shrink = 1 + (Math.max(0.55, Math.min(1, Math.sqrt(d3.mean(Rn) / Rm))) - 1) * v;
+        return { m, v, cx, cy, Rn, warp, shrink, n: mem.length, ids: new Set(mem.map(d => d.i)) };
+      }
       function place() {
         const on = loupeOn() && FOC, zk = ZT.k, rl = RL / zk, zr = 1 / Math.sqrt(Math.max(1, zk));
-        const E = pullAmt(), off = E ? pullOffsets() : null;
+        const E = pullAmt(), cols = collapses(), wt = new Map(cols.map(c => [c.m.id, c.k]));
+        const off = E ? pullOffsets(wt) : null;
         for (const d of dots) {
-          const o = off && off.get(d.i), px = d.bx + (o ? E * o[0] / o[2] : 0), py = d.by + (o ? E * o[1] / o[2] : 0);
-          d.ux = px; d.uy = py;   // where it is before the loupe (the marks' labels hold to this, so they stay put under it)
-          if (on) [d.x, d.y, d.z, d.inL] = fish(px, py, rl); else { d.x = px; d.y = py; d.z = 1; d.inL = false; }
+          const o = off && off.get(d.i);
+          d.sx = d.bx + (o ? E * o[0] / o[2] : 0); d.sy = d.by + (o ? E * o[1] / o[2] : 0); d.cz = 1;
         }
-        for (const d of dots) d.rr = d.dr * d.z * zr;
+        // the collapses, one after another; each one's outline is carried through the ones after it
+        const warps = [], shapes = [];
+        for (const c of cols) {
+          const w = collapseOf(c.m, c.v, zk);
+          if (!w) continue;
+          for (const d of dots) { [d.sx, d.sy] = w.warp(d.sx, d.sy); if (w.ids.has(d.i)) d.cz *= w.shrink; }
+          for (const s2 of shapes) s2.pts = s2.pts.map(([x, y]) => w.warp(x, y));
+          shapes.push({ id: c.m.id, v: c.v, n: w.n, pts: w.Rn.map ? Array.from(w.Rn, (rr, k) => [w.cx + rr * Math.cos(k * TAU / NB), w.cy + rr * Math.sin(k * TAU / NB)]) : [] });
+          warps.push(w.warp);
+        }
+        st.warps = warps;
+        for (const d of dots) {
+          d.ux = d.sx; d.uy = d.sy;   // where it is before the loupe (the marks' labels hold to this, so they stay put under it)
+          if (on) [d.x, d.y, d.z, d.inL] = fish(d.sx, d.sy, rl); else { d.x = d.sx; d.y = d.sy; d.z = 1; d.inL = false; }
+        }
+        // a collapsed mark's outline: under the loupe too (its label keeps to the outline without it)
+        st.col = new Map(shapes.map(s2 => [s2.id, { v: s2.v, n: s2.n, upts: s2.pts, pts: on ? s2.pts.map(([x, y]) => fish(x, y, rl)) : s2.pts }]));
+        for (const d of dots) d.rr = d.dr * d.z * zr * d.cz;
         dot.attr('cx', d => d.x.toFixed(1)).attr('cy', d => d.y.toFixed(1)).attr('r', d => d.rr.toFixed(2))
           .style('opacity', d => d.op * (on && !d.inL ? 0.45 : 1));
         vring.attr('cx', d => d.x.toFixed(1)).attr('cy', d => d.y.toFixed(1)).attr('r', d => (d.rr + 2.6 * zr).toFixed(2)).style('opacity', d => d.op * (on && !d.inL ? 0.45 : 1));
-        for (const d of versioned) d.vp = d.vb.map(([x, y]) => on ? fish(x, y, rl) : [x, y]);
+        for (const d of versioned) d.vp = d.vb.map(([x, y]) => { for (const w of warps) [x, y] = w(x, y); return on ? fish(x, y, rl) : [x, y]; });
         line.attr('d', curve);
         marksSoon();
         ver.attr('display', d => unfolded(d) ? null : 'none');
@@ -3178,7 +3373,32 @@ async function viewField(p) {
 
     // ---------------------------------------------------------------- the loupe's focus and the text it opens
     let FOC = null, loupeRaf = 0;   // the mouse, in the level's own coordinates (under the zoom)
-    const loupeOn = () => L.loupe !== false && !MARK.on && MARK.hov === null && !!cur && cur.kind === 'items' && !animating;
+    const loupeOn = () => L.loupe !== false && !MARK.on && !MARK.lab && !!cur && cur.kind === 'items' && !animating;
+    // marks at the bottom level: what the pointer is over — a mark's name, or (the smallest) bubble round it — decides which
+    // mark is lifted with its note showing. Decided from the pointer's place rather than enter/leave on the shapes, so
+    // crossing the dots inside a bubble does not flicker it.
+    const markUnder = ev => {
+      const lab = ev.target && ev.target.closest ? ev.target.closest('.fml') : null;
+      if (lab) return [d3.select(lab).datum().r.m.id, true];
+      if (!cur || cur.kind !== 'items' || !cur.gUnder) return [null, false];
+      for (const p of cur.gUnder.selectAll('path.fmbhit').nodes().reverse()) {   // the last drawn is the smallest
+        const m = p.getScreenCTM();
+        if (!m) continue;
+        const q = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m.inverse());
+        if (p.isPointInFill(q)) return [d3.select(p).datum().m.id, false];
+      }
+      return [null, false];
+    };
+    svg.on('mousemove.marks', ev => {
+      MARK.geomHover = !!cur && cur.kind === 'items';
+      if (!MARK.geomHover || MARK.on) return;
+      const [id, lab] = markUnder(ev);
+      if (id === MARK.hov && lab === MARK.lab) return;
+      const relabel = lab !== MARK.lab;
+      MARK.hov = id; MARK.lab = lab;
+      if (relabel && cur.hover) cur.hover();   // onto or off a name: the loupe steps aside or comes back
+      marksSoon();
+    }).on('mouseleave.marks', () => { if (MARK.geomHover && (MARK.hov !== null || MARK.lab)) { MARK.hov = null; MARK.lab = false; if (cur && cur.hover) cur.hover(); marksSoon(); } });
     svg.on('mousemove.loupe', ev => {
       if (!cur || !cur.hover) return;
       const [mx, my] = svgPt(ev);
@@ -3238,7 +3458,7 @@ async function viewField(p) {
         for (const i of idx) { const p2 = cOf(F.points[i]).split('.'); let k = 0; while (k < common.length && common[k] === p2[k]) k++; common = common.slice(0, k); }
         navTo(common.join('.'), [0, 1, 2, 3].map(k => d3.mean(idx, i => Q[i][k])));
       },
-      marks: marksSoon,
+      marks: () => { if (cur && cur.kind === 'items' && cur.zoomed) cur.zoomed(); else marksSoon(); },   // a collapse moves the dots
       lasso: () => { if (cur && cur.hover) cur.hover(); },   // the loupe steps aside while the lasso is out, and comes back
     };
   }
@@ -3248,7 +3468,8 @@ async function viewField(p) {
   const restyle = () => { rebund(); pres.restyle(); };
 
   async function loadPulse() {
-    const d = await api('/field/pulse' + (fieldState.days ? `?days=${fieldState.days}` : ''));
+    let d;
+    try { d = await api('/field/pulse' + (fieldState.days ? `?days=${fieldState.days}` : '')); } catch { return; }   // cut off by leaving the page (Safari rejects it)
     if (stale(g)) return;
     PULSE = d; PULSE.max = d3.max(d.heat, h => h[1]) || 1;
     HEAT = new Map(d.heat);
@@ -3431,6 +3652,7 @@ async function viewField(p) {
   addEventListener('keydown', onMarkKey, true);
   renderMarks();
   marksLoad().then(() => MARK.refresh());
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => MARK.refresh());   // the labels' targets are measured from the drawn text: again once the fonts are in
 
   // ---------------------------------------------------------------- tooltip + controls
   const $tip = main.querySelector('#ftip');
