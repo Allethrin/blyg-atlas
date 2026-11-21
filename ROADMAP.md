@@ -10,6 +10,10 @@ What it contains: the crawl and typed citation graph, embeddings with or without
 
 Left out on purpose: a publisher, the entity map and flow tab, any hosted version.
 
+## Since v0.1.0, not yet tagged
+
+- **Marks.** Lasso items on the Field's bottom level and give the set a name and a note. A mark is tied to its items, not to coordinates, so it survives a new layout. Each mark has a computed shape block, agent tools (`blyg_marks`, `blyg_mark`, `blyg_mark_propose`, `blyg_mark_note`) and a `mark` command. At the bottom level the marks are a view of their own: each is a body that holds its items, its name on it and its note in the margin. A local model can suggest a name and a note from a prompt you write; no prompt ships.
+
 ## Running it without thinking about processes
 
 Today the dashboard is a process you start and have to remember. After a crawl, a `git pull` or a change to how the map is built, it can be serving something stale with no sign of it, and starting a second one does not tell you a first is already running. The aim is that a stranger runs one command and never has to know what is running in the background.
@@ -24,7 +28,8 @@ Today the dashboard is a process you start and have to remember. After a crawl, 
 
 - **Fewer controls** (planned, choices open). The default view still shows more than a first-time reader needs: themes / themes + eras, slab / lens, the second depth slider, save view, ease. Decide which stay visible and which move behind the config. The control panel also takes the top third of a laptop-height window and cuts the map off.
 - **A time axis that one import cannot stretch** (idea). Items are spaced by their order, so a blyg that publishes 2,500 items in one night takes that share of the axis. Collapsing a burst from one blyg to a single position would fix it, at the cost of stacking those items on one moment.
-- **Marking up the map** (idea). Lasso a group of items and it becomes a mark: your own name and note, an automatic label from its terms, authors and dates, and a written summary on request. Marks are tied to the items, not to coordinates, so they survive a new layout. The summary needs a model, which for a public tool means a local default and the hosted ones by configuration.
+- **Marks, the rest** (planned). Still rough: when the plane tilts, the bodies jump to their new places instead of gliding; the loupe moves a mark's dots but not its body; a note's hairline can cross another mark; the hidden views draw marks the old way.
+- **A written summary of a mark** (idea). On request, from the mark's items. It needs a model, which for a public tool means a local default and the hosted ones by configuration.
 - **A map that holds still** (idea). The layout is recomputed whenever the set of items changes, so regions shift and get renamed between crawls. Options: a parametric UMAP that places new items on a fixed map, or aligning each new layout to the last.
 - **Numbered headings in region names** (idea). Repeated lines are filtered before naming, but a heading that varies ("Unit 3", "Unit 4") still lets its common word into a name.
 - **Faster first layout** (idea). The layout for the four-directions-of-meaning view is still computed when that view is not offered. Skipping it saves about a third of the first build.

@@ -6,7 +6,9 @@ A map of the [blygger](https://blygger.org/spec/0.3/) network that you grow from
 
 <img src="docs/img/field-region.webp" alt="Inside one region: its sub-regions, each holding its items as dots" width="59%"> <img src="docs/img/field-items.webp" alt="The bottom level: single items as dots, colored by what they are about" width="39.5%">
 
-<sub>The Field. Top: the whole network as regions, with a search lit and the citations between regions drawn as arrows. Below: inside one region, then the items at the bottom level, colored by what they are about.</sub>
+<img src="docs/img/field-marks.webp" alt="The bottom level with marks: three named bodies holding their items, each with its note in the margin" width="100%">
+
+<sub>The Field. Top: the whole network as regions, with a search lit and the citations between regions drawn as arrows. Middle: inside one region, then the items at the bottom level, colored by what they are about. Bottom: the same level with marks, each one a named body holding its items, its note in the margin.</sub>
 
 <!-- CLIP: a ~20 s screen recording of the Field goes here. -->
 
