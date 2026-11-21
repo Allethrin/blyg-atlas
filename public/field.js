@@ -254,18 +254,6 @@ const MARK = { on: false, hl: null, hov: null, lab: false, geomHover: false, lif
 const MCARDS = new Map();   // mark id → its open card
 async function marksLoad() { try { MARKS = (await api('/marks')).marks || []; } catch { MARKS = []; } return MARKS; }
 const markName = m => String((m && m.name) || '').trim() || 'untitled mark';
-// Collapsing a mark (the tour's bottom level; display only — see collapseOf): per mark, whether it is collapsed and by
-// how much, kept in this browser. MARK_COLLAPSE is the amount a mark collapses by unless its card's slider says otherwise
-// (0 = its own shape, 1 = a full circle); MARK_R sizes the circle, per √member, in the level's own px.
-const MARK_COLLAPSE = 0.75, MARK_R = 11;
-const MCOL = (() => { try { const j = JSON.parse(localStorage.markCollapse || '{}'); return j && typeof j === 'object' ? j : {}; } catch { return {}; } })();
-const markColAmt = id => { const e = MCOL[id]; return e && e[1] > 0 ? e[1] : MARK_COLLAPSE; };
-const markCol = id => { const e = MCOL[id]; return e && e[0] ? markColAmt(id) : 0; };   // the amount it is collapsed by now (0: open)
-function markColSet(id, on, amt) {
-  MCOL[id] = [on ? 1 : 0, +(amt ?? markColAmt(id)).toFixed(2)];
-  try { localStorage.markCollapse = JSON.stringify(MCOL); } catch { /* private window: this page only */ }
-  MARK.refresh();
-}
 const marksChanged = () => marksLoad().then(() => MARK.refresh());
 // the card that names a fresh lasso: `items` are field points, `gesture` and `view` go to the server as they are
 function markSaveCard(items, gesture, view, x, y, onDone) {
@@ -394,7 +382,6 @@ function markOpen(id, x, y) {
       <input class="fmname" type="text" maxlength="160" placeholder="name" value="${esc(m.name || '')}">
       <textarea class="fmnote" rows="3" placeholder="note">${esc(m.note || '')}</textarea>
       <div class="fmact"><button data-save disabled>save</button><button data-go title="${view ? 'back to the view it was made in (mode, level, plane, hidden blygs)' : 'fit the map to its members'}">go there</button><button data-del class="fmdel">delete</button><span class="fmmsg small muted"></span></div>
-      <div class="fmcolrow small"><button data-col title="draw it as one region on the map's bottom level, the space round it stretched to match (display only; also: click its name on the map)">${markCol(id) ? 'open it out' : 'collapse'}</button><input type="range" min="0.2" max="1" step="0.05" value="${markColAmt(id)}" data-colamt title="how far toward a circle: 1 is a full circle"><span class="muted" data-colv>${markColAmt(id).toFixed(2)}</span></div>
       <details class="fmshape" open><summary>shape</summary><pre>${esc(r.shape_text || '(no shape block)')}</pre></details>
       <details class="fmmembers" open><summary>members · ${members.length}</summary>${members.slice(0, CAP).map((x, j) => `<div class="fmm"><a href="#" data-j="${j}">${esc(x.title || '(untitled)')}</a> <span class="muted small">${esc(x.author || short(x.origin))}${x.created ? ' · ' + fmtDate(x.created) : ''}</span></div>`).join('')}${members.length > CAP ? `<div class="muted small">+${members.length - CAP} more</div>` : ''}</details>
       <details class="fmnotes" open><summary>notes · ${notes.length}</summary>${notes.map(n => `<div class="fmn ${n.author === 'agent' ? 'agent' : ''}"><div class="small muted">${n.author === 'agent' ? 'agent' : 'you'}${n.at ? ' · ' + fmtWhen(n.at) : ''}</div><div class="fmnt">${esc(n.text || '')}</div></div>`).join('')}
@@ -417,10 +404,6 @@ function markOpen(id, x, y) {
       $('[data-discard]').onclick = del;
     }
     body.querySelectorAll('.fmm a[data-j]').forEach(a => a.onclick = ev => { ev.preventDefault(); const x = members[Number(a.dataset.j)]; if (x) readerOpen(x.origin, x.id, 'mark'); });
-    // collapse: the button toggles it; the slider sets how far (and collapses it, so the change shows)
-    const $col = $('[data-col]'), $amt = $('[data-colamt]');
-    $col.onclick = () => { markColSet(id, !markCol(id)); $col.textContent = markCol(id) ? 'open it out' : 'collapse'; };
-    $amt.oninput = () => { const v = Number($amt.value); $('[data-colv]').textContent = v.toFixed(2); markColSet(id, true, v); $col.textContent = 'open it out'; };
     $('[data-addnote]').onclick = () => { const t = $('.fmadd').value.trim(); if (t) act(async () => { await post('/mark/' + encodeURIComponent(id) + '/note', { text: t }); await load(); }); };
   }
   load();
@@ -590,7 +573,7 @@ async function viewField(p) {
       <span class="fctl">color: ${['meaning', 'origin', 'age', 'read'].filter(c => OVERLAYS || c !== 'read').map(c => `<a href="#" data-color="${c}" class="${fieldState.color === c ? 'on' : ''}">${c}</a>`).join('')}</span>
       <span class="fstat muted">${F.n.toLocaleString()} ${FW.items} · ${topLevel.length} regions · ${F.edges.length} ${FW.edge} lines · laid out ${fmtWhen(F.built)}</span>
     </div>
-    ${mode === 'tour' ? '<div class="ftour" id="ftour"></div><div class="ffab" id="ffab"><button data-fab="find" title="search: light up a theme on the map (/)"><kbd>/</kbd> search</button><button data-fab="mark" title="lasso: drag around some dots to mark them (l)"><kbd>l</kbd> mark</button><button data-fab="drift" title="let the plane wander on its own">drift</button><button data-fab="bare" title="hide or show the controls (h)">controls</button><button data-fab="exit" title="leave full screen (f, or Esc)">exit</button></div>' : ''}
+    ${mode === 'tour' ? '<div class="ftour" id="ftour"></div><div class="ffab" id="ffab"><button data-fab="find" title="search: light up a theme on the map (/)"><kbd>/</kbd> search</button><button data-fab="mark" title="lasso: drag around some dots to mark them (l)"><kbd>l</kbd> mark</button><button data-fab="marks" title="the marks view on or off (v)"><kbd>v</kbd> marks</button><button data-fab="drift" title="let the plane wander on its own">drift</button><button data-fab="bare" title="hide or show the controls (h)">controls</button><button data-fab="exit" title="leave full screen (f, or Esc)">exit</button></div>' : ''}
     ${mode !== 'plane' ? '<div class="bcrumb" id="fcrumb"></div>' : ''}
     <div class="fwrap">
       <div class="fsvgwrap"><canvas id="fcanvas" ${mode === 'plane' ? '' : 'hidden'}></canvas><svg id="fsvg"></svg><div id="ftip" class="ftip" hidden></div></div>
@@ -719,11 +702,158 @@ async function viewField(p) {
   // melt together as metaballs do — sampled on a coarse grid (~3k cells) and its rings smoothed. Members far apart give
   // islands: that is where they are. The largest island carries the label.
   const blobLine = d3.line().curve(d3.curveBasisClosed), colLine = d3.line().curve(d3.curveCatmullRomClosed.alpha(0.5));
-  // Display only, a distortion on purpose: at the tour's bottom level a mark's dots are drawn squeezed toward its middle
-  // (see pullOffsets), so the set reads as one region. Item positions, the layout, the lasso and every number about the
-  // mark are untouched; a dot in two marks takes the average of the two. MARK_GLOM is how far out the squeeze levels off,
-  // as a share of the members' median distance from the middle: smaller pulls them in harder.
-  const MARK_GLOM = 0.8;
+  // ---------------------------------------------------------------- the marks view (the tour's bottom level)
+  // Ben, Nov 21: marks as "first class citizens … have their own kinda gravity", "the blygs outside of em as like a
+  // cloud", "the step that determines the rendering comes … a little earlier in the layout". With marks showing, the
+  // level is laid out round them:
+  //   · a mark with a real share of its members on the level (4 or more, and a quarter of the mark or 8) is a BODY: an
+  //     ellipse along its members' long axis, set down at their median, big enough for its dots and its name;
+  //   · bodies push each other apart (each stood in for by the largest circles that fit along its axis) while a spring
+  //     holds each toward its own place: they never overlap, and stay roughly where their members were;
+  //   · its members are packed inside: each keeps its direction from the mark's middle (in the mark's own frame) and
+  //     its order outward, and stands clear of the name;
+  //   · everything else is the cloud: first a rubber sheet round each body (what lay under it is spread over a band
+  //     outside it), then pushed until nothing overlaps;
+  //   · a mark with only a few members here has no body on this level; they are cloud dots with a dashed ring (strays),
+  //     so a mark smeared across levels by a new layout is one body where it mostly lives, not an outline over the gap.
+  // Display only, like the loupe: item positions, the lasso's maths and every number about a mark read the real places.
+  // The name runs along the body when its long axis rises to the right (as one hand letters a map), else it is stacked.
+  const BODY = { fs: 12.5, ls: 0.15, lh: 15.5, maxAspect: 2.1, packing: 0.4, gap: 9, rank: 0.55, memberR: 0.92, cloudR: 0.85, cloudOp: 0.55, band: 1.75 };
+  const bodyTextW = (() => {
+    const cx = document.createElement('canvas').getContext('2d'), memo = new Map();
+    return t => { if (!memo.has(t)) { cx.font = `600 ${BODY.fs}px Georgia, "Iowan Old Style", serif`; memo.set(t, cx.measureText(t).width + t.length * BODY.fs * BODY.ls); } return memo.get(t); };
+  })();
+  function bodyNameLines(name, maxW) {
+    const out = [];
+    // words, and the parts of a hyphenated word: a part joins the line before it without a space
+    const parts = name.toUpperCase().split(/\s+/).filter(Boolean).flatMap(w => w.split(/(?<=[-–—])(?=\S)/).map((t, k) => [t, k > 0]));
+    for (const [t, glued] of parts) { const last = out[out.length - 1], joined = last === undefined ? t : last + (glued ? '' : ' ') + t; if (last !== undefined && bodyTextW(joined) <= maxW) out[out.length - 1] = joined; else out.push(t); }
+    if (out.length > 1 && out[0].length <= 3 && bodyTextW(out[0] + ' ' + out[1]) <= maxW * 1.25) { out[1] = out[0] + ' ' + out[1]; out.shift(); }   // no article alone on a line
+    return out.length ? out : ['UNTITLED MARK'];
+  }
+  // the smallest semi-minor axis at which a w×h box turned by phi from the long axis sits inside an ellipse of this aspect
+  const bodyFit = (w, h, phi, aspect) => { let r2 = 0; for (const sy of [1, -1]) { const px = w / 2, py = sy * h / 2, u = px * Math.cos(phi) - py * Math.sin(phi), v = px * Math.sin(phi) + py * Math.cos(phi); r2 = Math.max(r2, (u / aspect) ** 2 + v ** 2); } return Math.sqrt(r2); };
+  // text wrapped to a width in px (measure: a string's width), at most `max` lines, the last one cut with an ellipsis
+  function wrapPx(text, maxW, measure, max) {
+    const words = String(text).split(/\s+/).filter(Boolean), out = [];
+    let line = '', used = 0;
+    for (const w of words) {
+      if (line && measure(line + ' ' + w) > maxW) { out.push(line); line = ''; if (out.length === max) break; }
+      line = line ? line + ' ' + w : w; used++;
+    }
+    if (out.length < max && line) out.push(line); else if (out.length === max) used--;
+    if (used < words.length && out.length) out[out.length - 1] = out[out.length - 1].replace(/[\s,.;:—–-]*\S*$/, '') + '…';
+    return out;
+  }
+  // a note's first sentence: up to the first stop that ends one (not an initial's or an abbreviation's, as in "Levi R.
+  // Bryant"), and at least 60 characters, so a stop inside a quoted title or a three-word opener does not end it
+  const firstSentence = note => {
+    const t = String(note || '').trim(), re = /[.?!]["”’)]?(?=\s|$)/g;
+    for (let m; (m = re.exec(t));) { const before = t.slice(0, m.index), last = (/(\S+)$/.exec(before) || ['', ''])[1]; if (m.index + m[0].length < 60 && m.index + m[0].length < t.length) continue; if (m[0][0] !== '.' || !(/^[A-Z]$/.test(last) || /^(mr|mrs|ms|dr|st|vs|etc|e\.g|i\.e|cf|no|vol|sept?|oct|nov|dec|jan|feb|aug)$/i.test(last))) return t.slice(0, m.index + m[0].length); }
+    return t;
+  };
+  // dots: the level's dots that count ({ i, bx, by, dr, p }); byI: all of the level's, by index; ring: the level's circle;
+  // prev: mark id → [x, y] of the last layout (bodies start from there, so they hold still while the plane tilts)
+  function markBodies(dots, byI, ring, prev) {
+    const cl = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const bodies = [], stray = new Map(), inBody = new Set();
+    for (const m of marksShown()) {
+      const mem = markIdx(m).map(i => byI.get(i)).filter(d => d && d.w >= 0.1 && !inBody.has(d.i)), n = mem.length, nAll = Math.max(n, (m.members || []).length);
+      if (!n) continue;
+      if (!(n >= 4 && (n >= 0.25 * nAll || n >= 8))) { for (const d of mem) if (!stray.has(d.i)) stray.set(d.i, m); continue; }
+      const cx = d3.median(mem, d => d.bx), cy = d3.median(mem, d => d.by);
+      const dist = mem.map(d => Math.hypot(d.bx - cx, d.by - cy)), cutAt = d3.quantile(dist.slice().sort(d3.ascending), 0.85) + 1e-6;
+      let sxx = 0, syy = 0, sxy = 0, k = 0;   // the axes from the nearer 85%: a far member or two does not turn the body
+      mem.forEach((d, j) => { if (dist[j] > cutAt) return; const dx = d.bx - cx, dy = d.by - cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; k++; });
+      sxx = sxx / k + 1e-3; syy = syy / k + 1e-3; sxy /= k;
+      let th = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+      const tr = sxx + syy, disc = Math.sqrt(Math.max(0, tr * tr / 4 - (sxx * syy - sxy * sxy))), l1 = tr / 2 + disc, l2 = Math.max(1e-3, tr / 2 - disc);
+      const aspect0 = cl(Math.sqrt(l1 / l2), 1, BODY.maxAspect);
+      if (th > Math.PI / 2) th -= Math.PI; if (th <= -Math.PI / 2) th += Math.PI;
+      const deg = th * 180 / Math.PI, along = aspect0 >= 1.25 && deg >= -52 && deg <= 8;   // (screen y runs down: a negative angle rises to the right)
+      const ta = (along ? cl(deg, -40, 4) : -8) * Math.PI / 180, phi = ta - th;
+      const aspect = along ? aspect0 : 1 + (aspect0 - 1) * 0.6 * Math.cos(phi) ** 2;   // a body its name cannot run along is drawn rounder
+      const nl = bodyNameLines(markName(m), along ? 175 : Math.abs(deg) > 55 ? 100 : 135), nW = Math.max(...nl.map(bodyTextW));
+      const col = [0, 0, 0];
+      for (const d of mem) { const c = d3.rgb(fillOf(d.p)); col[0] += c.r / n; col[1] += c.g / n; col[2] += c.b / n; }
+      bodies.push({ m, mem, n, nAll, ax: cx, ay: cy, x: cx, y: cy, th, c: Math.cos(th), s: Math.sin(th), ta, phi, aspect, nl, lw: nW + 10, lh: nl.length * BODY.lh + 4,
+        sd1: Math.sqrt(l1), sd2: Math.sqrt(l2), col: col.map(Math.round), dotArea: d3.sum(mem, d => Math.PI * (d.dr + 1.3) ** 2) / BODY.packing });
+      for (const d of mem) { inBody.add(d.i); stray.delete(d.i); }
+    }
+    for (const i of inBody) stray.delete(i);
+    const size = sc => {
+      for (const B of bodies) {
+        B.b = Math.max(bodyFit(B.lw + 8, B.lh + 6, B.phi, B.aspect), sc * Math.sqrt((B.dotArea + B.lw * B.lh * 1.25) / (Math.PI * B.aspect))); B.a = B.b * B.aspect;
+        const f2 = B.a * B.a - B.b * B.b, oMax = f2 / B.a, nC = B.aspect < 1.08 ? 1 : Math.ceil(B.aspect * 3);
+        B.sub = [];
+        for (let j = 0; j < nC; j++) { const o = nC === 1 ? 0 : -oMax + 2 * oMax * j / (nC - 1); B.sub.push([o, nC === 1 ? B.b : B.b * Math.sqrt(Math.max(0, 1 - o * o / f2))]); }
+      }
+    };
+    const warm = bodies.length > 0 && bodies.every(B => prev.has(B.m.id)), IT = warm ? 240 : 700, R = ring.R - 6;
+    const relax = () => {
+      for (const B of bodies) { const q = prev.get(B.m.id); B.x = q ? q[0] : B.ax; B.y = q ? q[1] : B.ay; }
+      let worst = 0;
+      for (let it = 0; it < IT; it++) {
+        const kA = 0.035 * Math.max(0.15, 1 - it / (IT * 0.7));
+        for (const B of bodies) { B.x += (B.ax - B.x) * kA; B.y += (B.ay - B.y) * kA; }
+        worst = 0;
+        for (let pass = 0; pass < 2; pass++) for (let p = 0; p < bodies.length; p++) for (let q = p + 1; q < bodies.length; q++) {
+          const A = bodies[p], B = bodies[q];
+          if (Math.hypot(B.x - A.x, B.y - A.y) > A.a + B.a + BODY.gap) continue;
+          let best = 0, bx = 0, by = 0;
+          for (const [oa, ra] of A.sub) for (const [ob, rb] of B.sub) {
+            const dx = B.x + ob * B.c - A.x - oa * A.c, dy = B.y + ob * B.s - A.y - oa * A.s, d = Math.hypot(dx, dy) || 1e-6, ov = ra + rb + BODY.gap - d;
+            if (ov > best) { best = ov; bx = dx / d; by = dy / d; }
+          }
+          if (best > 0) { const ma = A.a * A.b, mb = B.a * B.b, sa = mb / (ma + mb), sb = ma / (ma + mb); A.x -= bx * best * sa * 0.6; A.y -= by * best * sa * 0.6; B.x += bx * best * sb * 0.6; B.y += by * best * sb * 0.6; worst = Math.max(worst, best); }
+        }
+        for (const B of bodies) for (const [o, r] of B.sub) {   // inside the level's circle
+          const x = B.x + o * B.c - ring.cx, y = B.y + o * B.s - ring.cy, d = Math.hypot(x, y), over = d + r - R;
+          if (over > 0) { B.x -= x / d * over; B.y -= y / d * over; }
+        }
+      }
+      return worst;
+    };
+    let sc = 1;
+    for (let k = 0; k < 14; k++) { size(sc); if (relax() < 1.5) break; sc *= 0.93; }   // too many to fit at full size: all a little smaller
+    const pos = new Map();
+    for (const B of bodies) {
+      const cp = Math.cos(B.phi), sp = Math.sin(B.phi);
+      const pol = B.mem.map(d => { const dx = d.bx - B.ax, dy = d.by - B.ay, u = (dx * B.c + dy * B.s) / B.sd1, v = (-dx * B.s + dy * B.c) / B.sd2; return { d, rho: Math.hypot(u, v), ang: Math.atan2(v, u) }; });
+      const order = pol.slice().sort((p, q) => p.rho - q.rho), rmax = order[order.length - 1].rho || 1;
+      order.forEach((p, k) => { p.rr = 0.9 * (BODY.rank * Math.sqrt((k + 0.5) / order.length) + (1 - BODY.rank) * p.rho / rmax); });
+      const P = pol.map(p => { const A = Math.max(1, B.a - p.d.dr - 3), Bb = Math.max(1, B.b - p.d.dr - 3); return { d: p.d, u: A * p.rr * Math.cos(p.ang), v: Bb * p.rr * Math.sin(p.ang), r: p.d.dr * BODY.memberR + 0.8, A, Bb }; });
+      for (let it = 0; it < 220; it++) {
+        for (let p = 0; p < P.length; p++) for (let q = p + 1; q < P.length; q++) { const du = P[q].u - P[p].u, dv = P[q].v - P[p].v, dd = Math.hypot(du, dv) || 1e-6, ov = P[p].r + P[q].r - dd; if (ov > 0) { const k = ov / dd * 0.5; P[p].u -= du * k; P[p].v -= dv * k; P[q].u += du * k; P[q].v += dv * k; } }
+        P.forEach((p, j) => {   // out of the name's box, by the nearer way (over or under it, mostly)
+          let lu = p.u * cp + p.v * sp, lv = -p.u * sp + p.v * cp;
+          const px = B.lw / 2 + p.r - Math.abs(lu), py = B.lh / 2 + p.r - Math.abs(lv);
+          if (px > 0 && py > 0) { if (py < px * 1.6) lv = (lv === 0 ? (j % 2 ? 1 : -1) : Math.sign(lv)) * (B.lh / 2 + p.r); else lu = Math.sign(lu || 1) * (B.lw / 2 + p.r); p.u = lu * cp - lv * sp; p.v = lu * sp + lv * cp; }
+        });
+        for (const p of P) { const q = (p.u / p.A) ** 2 + (p.v / p.Bb) ** 2; if (q > 1) { const k = 1 / Math.sqrt(q); p.u *= k; p.v *= k; } }
+      }
+      for (const p of P) pos.set(p.d.i, [B.x + p.u * B.c - p.v * B.s, B.y + p.u * B.s + p.v * B.c, BODY.memberR, 1]);
+    }
+    const cloud = bodies.length ? dots.filter(d => !inBody.has(d.i)).map(d => {
+      let x = d.bx, y = d.by;
+      for (const B of bodies) {
+        const dx = x - B.x, dy = y - B.y, u = dx * B.c + dy * B.s, v = -dx * B.s + dy * B.c, rho = Math.hypot(u / (B.a + 6), v / (B.b + 6));
+        if (rho < BODY.band) { const k = (1 + (BODY.band - 1) * rho / BODY.band) / Math.max(rho, 1e-6), nu = u * k, nv = v * k; x = B.x + nu * B.c - nv * B.s; y = B.y + nu * B.s + nv * B.c; }
+      }
+      return { d, tx: x, ty: y, x, y, r: d.dr * BODY.cloudR };
+    }) : [];
+    for (let it = 0; it < 160; it++) {
+      for (const n of cloud) { n.x += (n.tx - n.x) * 0.1; n.y += (n.ty - n.y) * 0.1; }
+      for (const n of cloud) for (const B of bodies) {
+        const dx = n.x - B.x, dy = n.y - B.y, u = dx * B.c + dy * B.s, v = -dx * B.s + dy * B.c, A = B.a + n.r + 5, Bb = B.b + n.r + 5, q = (u / A) ** 2 + (v / Bb) ** 2;
+        if (q < 1) { const k = 1 / Math.sqrt(Math.max(q, 1e-6)), nu = u * k, nv = v * k; n.x = B.x + nu * B.c - nv * B.s; n.y = B.y + nu * B.s + nv * B.c; }
+      }
+      for (let p = 0; p < cloud.length; p++) for (let q = p + 1; q < cloud.length; q++) { const A = cloud[p], Bq = cloud[q], dx = Bq.x - A.x, dy = Bq.y - A.y; if (Math.abs(dx) > 20 || Math.abs(dy) > 20) continue; const dd = Math.hypot(dx, dy) || 1e-6, ov = A.r + Bq.r + 0.8 - dd; if (ov > 0) { const k = ov / dd * 0.5; A.x -= dx * k; A.y -= dy * k; Bq.x += dx * k; Bq.y += dy * k; } }
+      for (const n of cloud) { const x = n.x - ring.cx, y = n.y - ring.cy, m = Math.hypot(x, y), lim = ring.R - n.r - 2; if (m > lim) { n.x = ring.cx + x / m * lim; n.y = ring.cy + y / m * lim; } }
+    }
+    for (const n of cloud) pos.set(n.d.i, [n.x, n.y, BODY.cloudR, BODY.cloudOp]);
+    return { bodies, pos, stray };
+  }
   function markBlob(pl) {
     if (!pl.length) return null;
     if (pl.length > 400) { const st = Math.ceil(pl.length / 400); pl = pl.filter((_, j) => j % st === 0); }   // a huge mark: a sample shapes it
@@ -1945,33 +2075,99 @@ async function viewField(p) {
     // round the circle that holds them. Members outside the slab or the time window (weight < 0.1) are left out, as
     // their dots are. The names and notes are over everything.
     const gMarks = gZoom.append('g').attr('class', 'fmarks'), gMB = gMarks.append('g'), gML = gMarks.append('g');
+    const gNotes = svg.append('g').attr('class', 'fmnotes');   // the notes in the margins: outside the pinch zoom
     markDefs(defs);
+    // The marks view's drawing (the layout is markBodies; the level works it out and keeps it in cur.bodies): each body's
+    // ellipse under the dots, tinted with its members' colours; its name on it, along it; a dashed ring round each stray;
+    // and the notes as marginalia — each mark's first sentence in the margin on its side, in the order the marks stand,
+    // a hairline to its body (all of the note while the mark is hovered). With no room for margins (a narrow window, or
+    // zoomed in) only the hovered mark's note shows, on a plate in the corner.
+    const noteW = (() => { const cx = document.createElement('canvas').getContext('2d'), memo = new Map(); cx.font = 'italic 11px Georgia, "Iowan Old Style", serif'; return t => { let w = memo.get(t); if (w === undefined) memo.set(t, w = cx.measureText(t).width); return w; }; })();
+    const noteMemo = new Map();
+    const noteLines = (text, w, max) => { const k = Math.round(w) + '|' + max + '|' + text; let v = noteMemo.get(k); if (!v) noteMemo.set(k, v = wrapPx(text, w, noteW, max)); return v; };
+    const bodyOn = m => MARK.hl === m.id || MARK.hov === m.id;
+    function drawBodies(bottom) {
+      const BLv = bottom ? cur.bodies : null, bodies = BLv ? BLv.bodies : [], zk = ZT.k, key = B => String(B.m.id), fade = bottom ? cur.bodyIn ?? 1 : 1;
+      const tone = (B, t) => d3.interpolateRgb(`rgb(${B.col})`, C.fg)(t);
+      if (bottom) {
+        const bg = cur.gUnder.selectAll('g.fmbody').data(bodies.slice().sort((p, q) => q.a * q.b - p.a * p.b), key).join(en => {
+          const g2 = en.append('g').attr('class', 'fmbody');
+          g2.append('ellipse').attr('class', 'fmbe');
+          g2.append('ellipse').attr('class', 'fmbhit').on('click', (ev, B) => { ev.stopPropagation(); markOpen(B.m.id); });
+          return g2;
+        }).order();
+        bg.attr('transform', B => `translate(${B.x.toFixed(1)},${B.y.toFixed(1)}) rotate(${(B.th * 180 / Math.PI).toFixed(1)})`).style('opacity', fade)
+          .classed('on', B => bodyOn(B.m)).classed('prop', B => B.m.state === 'proposed').classed('lift', B => MARK.lift.has(B.m.id));
+        bg.select('ellipse.fmbe').attr('rx', B => B.a.toFixed(1)).attr('ry', B => B.b.toFixed(1)).style('fill', B => `rgb(${B.col})`).style('stroke', B => tone(B, 0.25));
+        bg.select('ellipse.fmbhit').attr('rx', B => B.a.toFixed(1)).attr('ry', B => B.b.toFixed(1));
+        const strays = BLv ? [...BLv.stray].map(([i, m]) => ({ d: cur.byI.get(i), m })).filter(q => q.d && q.d.w >= 0.1) : [];
+        cur.gUnder.selectAll('circle.fmstray').data(strays, q => q.d.i).join('circle').attr('class', 'fmstray')
+          .attr('cx', q => q.d.x.toFixed(1)).attr('cy', q => q.d.y.toFixed(1)).attr('r', q => ((q.d.rr || q.d.dr) + 2.8 / Math.sqrt(Math.max(1, zk))).toFixed(2)).style('opacity', fade).classed('on', q => bodyOn(q.m) || MARK.lift.has(q.m.id));
+      }
+      const lg = gML.selectAll('g.fmbl').data(bodies, key).join('g').attr('class', 'fmbl');
+      lg.attr('transform', B => `translate(${B.x.toFixed(1)},${B.y.toFixed(1)}) rotate(${(B.ta * 180 / Math.PI).toFixed(1)}) scale(${(1 / zk).toFixed(4)})`).style('opacity', fade).classed('on', B => bodyOn(B.m));
+      lg.each(function (B) {
+        d3.select(this).selectAll('text').data(B.nl).join('text').attr('y', (t, k) => (-(B.nl.length * BODY.lh) / 2 + BODY.fs * 0.86 + k * BODY.lh).toFixed(1)).style('fill', tone(B, 0.55)).text(t => t);
+      });
+      // the notes
+      const R0 = bottom ? cur.R0 || 0 : 0, colW = Math.min(230, W / 2 - R0 - 52), LH = 13.6, sy = y => ZT.y + zk * y, sx = x => ZT.x + zk * x;
+      const noted = L.notes !== false ? bodies.filter(B => String(B.m.note || '').trim()) : [], roomy = colW >= 96 && zk <= 1.05;
+      let E = [];
+      if (roomy) {
+        const sides = { L: [], R: [] };
+        for (const B of noted) sides[B.x < W / 2 ? 'L' : 'R'].push(B);
+        for (const [from, to] of [['L', 'R'], ['R', 'L']]) while (sides[from].length > sides[to].length + 2) {   // even the two margins out: the bodies nearest the middle change sides
+          let k = 0; sides[from].forEach((B, q) => { if (Math.abs(B.x - W / 2) < Math.abs(sides[from][k].x - W / 2)) k = q; });
+          sides[to].push(...sides[from].splice(k, 1));
+        }
+        for (const side of ['L', 'R']) {
+          const col = sides[side].sort((p, q) => p.y - q.y).map(B => { const on = bodyOn(B.m), note = String(B.m.note).trim(), lines = noteLines(on ? note : firstSentence(note), colW, on ? 16 : 5); return { B, side, on, lines, h: lines.length * LH + 8 }; });
+          let y = 30;
+          for (const e of col) { e.y = Math.max(y, sy(e.B.y) - e.h / 2); y = e.y + e.h + 9; }
+          let over = y - 9 - (H - 34);
+          for (let k = col.length - 1; k >= 0 && over > 0; k--) { const floor = k ? col[k - 1].y + col[k - 1].h + 9 : 30, mv = Math.min(over, col[k].y - floor); for (let q = k; q < col.length; q++) col[q].y -= mv; over -= mv; }
+          E.push(...col);
+        }
+      } else {
+        const B = noted.find(b => bodyOn(b.m));
+        if (B) { const lines = noteLines(String(B.m.note).trim(), 250, 16); E = [{ B, side: 'P', on: true, lines, h: lines.length * LH + 8, y: 40 }]; }
+      }
+      const ng = gNotes.selectAll('g.fmnote').data(E, e => key(e.B)).join(en => {
+        const g2 = en.append('g').attr('class', 'fmnote');
+        g2.append('rect').attr('class', 'fmnbg'); g2.append('path').attr('class', 'fmnlead'); g2.append('circle').attr('class', 'fmndot').attr('r', 1.8); g2.append('path').attr('class', 'fmnbar'); g2.append('text');
+        g2.on('click', (ev, e) => { ev.stopPropagation(); markOpen(e.B.m.id); });
+        return g2;
+      });
+      ng.style('opacity', fade).classed('on', e => e.on).classed('plate', e => e.side === 'P').each(function (e) {
+        const B = e.B, g2 = d3.select(this), left = e.side === 'L', xEdge = e.side === 'P' ? 34 : left ? W / 2 - R0 - 16 : W / 2 + R0 + 16, tx = xEdge + (left ? -8 : 8);
+        const wide = Math.max(...e.lines.map(noteW), 40);
+        g2.select('rect.fmnbg').attr('x', left ? tx - wide - 6 : xEdge - 4).attr('y', e.y - 3).attr('width', wide + 18).attr('height', e.h + 2).attr('rx', 5);
+        g2.select('path.fmnbar').attr('d', `M${xEdge},${e.y.toFixed(1)}v${(e.h - 6).toFixed(1)}`).style('stroke', tone(B, 0.3));
+        g2.select('text').attr('text-anchor', left ? 'end' : 'start').style('fill', tone(B, 0.72))
+          .selectAll('tspan').data(e.lines).join('tspan').attr('x', tx).attr('y', (t, k) => (e.y + 10.5 + k * LH).toFixed(1)).text(t => t);
+        // the hairline: from the note to the body's rim, toward the note
+        const show = e.side !== 'P', ex = xEdge + (left ? 5 : -5), ey = e.y + e.h / 2 - 2;
+        if (show) {
+          const dx = (ex - ZT.x) / zk - B.x, dy = (ey - ZT.y) / zk - B.y, u = dx * B.c + dy * B.s, v = -dx * B.s + dy * B.c, k = 1 / (Math.hypot(u / B.a, v / B.b) || 1), bx = sx(B.x + (u * B.c - v * B.s) * k), by = sy(B.y + (u * B.s + v * B.c) * k);
+          g2.select('path.fmnlead').attr('d', `M${ex},${ey.toFixed(1)}L${bx.toFixed(1)},${by.toFixed(1)}`).style('stroke', tone(B, 0.4));
+          g2.select('circle.fmndot').attr('cx', bx.toFixed(1)).attr('cy', by.toFixed(1)).style('fill', tone(B, 0.4));
+        }
+        g2.select('path.fmnlead').attr('display', show ? null : 'none'); g2.select('circle.fmndot').attr('display', show ? null : 'none');
+      });
+    }
     let marksRaf = 0;
     function marksSoon() {
       if (marksRaf) return;
       marksRaf = requestAnimationFrame(() => {
         marksRaf = 0;
         if (stale(g) || !svg.node().isConnected) return;
-        if (animating || !cur) { gMarks.attr('display', 'none'); setTimeout(marksSoon, 120); return; }
-        gMarks.attr('display', null);
+        if (animating || !cur) { gMarks.attr('display', 'none'); gNotes.attr('display', 'none'); setTimeout(marksSoon, 120); return; }
+        gMarks.attr('display', null); gNotes.attr('display', null);
         const zk = ZT.k, lvl = cur.path ? cur.path.split('.').length : 0;
         const at = cur.nodes ? new Map(cur.nodes.map(d => [d.path, d])) : null;
         const bottom = cur.kind === 'items' && cur.gUnder;
         if (bottom) gMB.selectAll('*').remove();
-        drawMarkSvg(bottom ? cur.gUnder : gMB, gML, m => {
-          const out = [];
-          if (cur.kind === 'items') {
-            for (const i of markIdx(m)) { const d = cur.byI && cur.byI.get(i); if (d && d.w >= 0.1) out.push([d.x, d.y, (d.rr || d.dr) + 9 / zk, d.ux ?? d.x, d.uy ?? d.y, d.dr / Math.sqrt(Math.max(1, zk)) * (d.cz || 1) + 9 / zk]); }
-            const cs = cur.col && cur.col.get(m.id);
-            if (cs && cs.v > 0.02 && out.length) { out.shape = cs.pts; out.ushape = cs.upts; out.col = cs; }
-            return out;
-          }
-          return out;   // above the bottom level a mark draws no outline of its own (the counts below)
-        }, zk, full => { if (full && cur && cur.hover) cur.hover(); marksSoon(); }, -ZT.y,
-          [...(cur.nodes || []).filter(d => d.r >= 18).map(d => ({ x: d.x * zk, y: (d.y - 28) * zk, w: Math.min(d.r * 1.72, 190) * zk, h: 66 * zk })),   // the circles' names
-           { x: W / 2 - ZT.x, y: 4 - ZT.y, w: 440, h: 24 }, { x: W / 2 - ZT.x, y: H - 44 - ZT.y, w: 440, h: 26 }],   // the poles, top and bottom
-          // at the bottom a click on a mark's name collapses it (or opens it out); shift-click opens its card
-          cur.kind === 'items' ? { bubble: true, click: (m, ev) => ev.shiftKey ? markOpen(m.id) : markColSet(m.id, !markCol(m.id)), hint: m => markCol(m.id) ? 'click: open it out · shift-click: its card' : 'click: collapse · shift-click: its card' } : {});
+        drawBodies(!!bottom);   // above the bottom level a mark draws no outline of its own (the counts below)
         // Above the bottom level (Ben, Nov 20: the rings round the regions "just get noisy and too much … im making
         // potentially a lot of them in subregions"): no outline per mark; a circle that holds members of any marks gets
         // one small count on its lower right rim.
@@ -1996,8 +2192,8 @@ async function viewField(p) {
         const lgd = main.querySelector('#flegend');
         if (lgd) {
           let sp = lgd.querySelector('.fmleg');
-          const show = cur.kind === 'items' && !!gML.select('g.fml').node();
-          if (show && !sp) { sp = document.createElement('span'); sp.className = 'fmleg'; sp.textContent = ' · click a mark\u2019s name to collapse it · shift-click for its card'; lgd.appendChild(sp); }
+          const show = cur.kind === 'items' && !!gML.select('g.fmbl').node();
+          if (show && !sp) { sp = document.createElement('span'); sp.className = 'fmleg'; sp.textContent = ' · click a mark for its card · v: the marks on or off'; lgd.appendChild(sp); }
           else if (!show && sp) sp.remove();
         }
       });
@@ -3040,7 +3236,7 @@ async function viewField(p) {
         .attr('class', d => 'bdot' + (d.p.reads ? ' read' : '') + (HITS && HITS.has(d.i) ? ' hit' : '') + (readerIsOpen(d.p) ? ' fopen' : '')).attr('r', d => d.dr).attr('fill', d => fillOf(d.p));
       const mine = d => l => l.a === d || l.b === d;
       dot.on('mouseenter', (ev, d) => { gl.classed('hov', true); line.classed('on', mine(d)).filter(mine(d)).raise(); d3.select(ev.currentTarget).classed('hov', true); holdV(d); markLift(d.i, marksSoon); })
-        .on('mousemove', (ev, d) => tip(ev, pointTip(d.p) + `<div class="small">${!counting() ? '' : `weight ${WT[d.i].toFixed(2)} — ${WT[d.i] > 0.5 ? 'inside' : WT[d.i] > 0.1 ? 'at the edge of' : 'outside'} ${where()} · `}shift-click: lens here</div>` + (ext.get(d.i) ? `<div class="small muted">${ext.get(d.i)} ${ext.get(d.i) === 1 ? FW.edge : FW.edges} to items elsewhere</div>` : '')))
+        .on('mousemove', (ev, d) => tip(ev, pointTip(d.p) + (st.bodies && st.bodies.stray.has(d.i) ? `<div class="small">in the mark ${esc(markName(st.bodies.stray.get(d.i)))}, which stands elsewhere</div>` : '') + `<div class="small">${!counting() ? '' : `weight ${WT[d.i].toFixed(2)} — ${WT[d.i] > 0.5 ? 'inside' : WT[d.i] > 0.1 ? 'at the edge of' : 'outside'} ${where()} · `}shift-click: lens here</div>` + (ext.get(d.i) ? `<div class="small muted">${ext.get(d.i)} ${ext.get(d.i) === 1 ? FW.edge : FW.edges} to items elsewhere</div>` : '')))
         .on('mouseleave', ev => { gl.classed('hov', false); line.classed('on', false); d3.select(ev.currentTarget).classed('hov', false); tipOff(); releaseV(); markLift(null, marksSoon); })
         .on('click', (ev, d) => { ev.stopPropagation(); tipOff(); if (ev.shiftKey) return setLens('i:' + d.i); openItem(d.p); });
       // the histories sit over the dots, so an unfolded line and its ticks are never under a neighbour; a tick holds
@@ -3064,157 +3260,44 @@ async function viewField(p) {
       const ring = scene.append('circle').attr('class', 'bloupe').attr('display', 'none');
       const gBub = scene.append('g').attr('class', 'bbubs');
       const bubbles = makeBubbles(gBub, () => cur === st && !!FOC && loupeOn());
-      // Marked dots squeezed toward their mark’s middle (the glom, MARK_GLOM), eased in over 0.7 s when the level opens or
-      // the set of marks changes. The offsets are recomputed from the dots' own places on every frame, so they follow the
-      // slab and the tilt without lag; a dot in two marks takes the average of the two pulls, so it never flickers.
-      let pullT = 0, pullSig = '', pullRaf = 0;
-      const pullAmt = () => {
-        const sig = marksShown().map(m => m.id + ':' + markIdx(m).length).join(',');
-        if (sig !== pullSig) { pullSig = sig; pullT = performance.now(); }
-        const u = reduce ? 1 : clamp01((performance.now() - pullT) / 700);
-        if (u < 1 && !pullRaf) pullRaf = requestAnimationFrame(() => { pullRaf = 0; if (cur === st && scene.node().isConnected) place(); });
-        return 1 - Math.pow(1 - u, 3);
-      };
-      // pull weights: a collapsing mark's pull hands over to its collapse (1 → 0 as it collapses, back as it opens)
-      const pullOffsets = wt => {
-        const acc = new Map();
-        for (const m of marksShown()) {
-          const k = wt.has(m.id) ? wt.get(m.id) : 1;
-          if (k <= 0.001) continue;
-          const mem = markIdx(m).map(i => byI.get(i)).filter(d => d && d.w >= 0.1);
-          if (mem.length < 2) continue;
-          // the glom (Ben, Nov 20: "glom them together more … sacrifice more spatial relation within the mark"): each
-          // member keeps its direction from the mark's middle, its distance squeezed to r0·tanh(ρ/r0) — the near ones
-          // hardly move, the far ones come in most, none ends further than r0. r0: the members' median distance, or the
-          // room the dots need side by side (area ≈ n dots of diameter 2.5 dr), whichever is larger.
-          const mx = d3.mean(mem, d => d.bx), my = d3.mean(mem, d => d.by);
-          const rho = mem.map(d => Math.hypot(d.bx - mx, d.by - my));
-          const r0 = Math.max(MARK_GLOM * (d3.median(rho) || 1), 1.3 * d3.mean(mem, d => d.dr) * Math.sqrt(mem.length));
-          mem.forEach((d, j) => {
-            const q = rho[j] > 1e-9 ? r0 * Math.tanh(rho[j] / r0) / rho[j] : 1;
-            const a = acc.get(d.i) || [0, 0, 0]; a[0] += k * (mx + (d.bx - mx) * q - d.bx); a[1] += k * (my + (d.by - my) * q - d.by); a[2]++; acc.set(d.i, a);
-          });
-        }
-        return acc;
-      };
-
-      // ---------------------------------------------------------------- collapsing a mark (Ben, Nov 19: "it collapses them
-      // into a blob … pulls them together into another region basically. But youd still be able to see inside … the
-      // collapse stretches the space sorta. like the projection")
-      // DISPLAY ONLY, like the loupe and the pull: the shape block, the lasso's maths, the layout and every number about a
-      // mark read the real places. A collapsed mark (state per mark in localStorage, amount c, MARK_COLLAPSE by default)
-      // is drawn as a near-circle, and the space round it is a rubber sheet:
-      //   · its boundary along each ray from its centre, R(θ) — where the ray leaves the union of its members' discs, the
-      //     same discs its bubble is drawn round — becomes R'(θ) = (1 − c)·R(θ) + c·r, r a region-sized circle (area ∝
-      //     members);
-      //   · inside, a point's distance is scaled by R'/R (members keep their angle and their order outward);
-      //   · outside, ρ ↦ ρ + (R' − R)·s(u), u = (ρ − R)/(F − R), s(u) = (1 − u)²(1 + 2u), identity beyond F. F − R is at
-      //     least 2|R' − R|, so the map keeps increasing along every ray (s′ ≥ −1.5): nothing crosses anything.
-      // Each map keeps every point on its ray and is increasing along it, so it is one-to-one; several collapsed marks are
-      // applied one after another (by id), and a chain of one-to-one maps cannot fold, however their zones overlap. It works
-      // at the loupe's stage, before the loupe: the loupe then magnifies the warped sheet.
-      const NB = 72, CA = new Map();   // mark id → its collapse animation { from, to, t0, v }
-      let colRaf = 0;
-      const easeIO = u => u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
-      // the collapses showing now, by id: { m, v (amount now), k (what is left of its pull) }
-      function collapses() {
-        const now = performance.now(), out = [];
-        let moving = false;
-        for (const m of [...marksShown()].sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))) {
-          const to = markCol(m.id);
-          let a = CA.get(m.id);
-          if (!a) CA.set(m.id, a = { from: to, to, t0: 0, v: to });   // first seen on this level: as it was left, no animation
-          if (a.to !== to) { a.from = a.v; a.to = to; a.t0 = now; }
-          const u = reduce || !a.t0 ? 1 : clamp01((now - a.t0) / 600);
-          a.v = a.from + (a.to - a.from) * easeIO(u);
-          if (u < 1) moving = true;
-          if (a.v > 0.001) out.push({ m, v: a.v, k: Math.max(0, 1 - a.v / Math.max(a.from, a.to, 1e-3)) });
-        }
-        if (moving && !colRaf) colRaf = requestAnimationFrame(() => { colRaf = 0; if (cur === st && scene.node().isConnected) place(); });
-        return out;
-      }
-      const binOf = th => { const f = ((th / TAU) % 1 + 1) % 1 * NB, k0 = Math.floor(f) % NB; return [k0, (k0 + 1) % NB, f - Math.floor(f)]; };
-      const atBin = (A, th) => { const [k0, k1, t] = binOf(th); return A[k0] + (A[k1] - A[k0]) * t; };
-      // one mark's warp, from the dots where they are now (sx, sy): its centre, R and R' per bin, and the map itself
-      function collapseOf(m, v, zk) {
-        const mem = markIdx(m).map(i => byI.get(i)).filter(d => d && d.w >= 0.1);
-        if (!mem.length) return null;
-        const cx = d3.mean(mem, d => d.sx), cy = d3.mean(mem, d => d.sy);
-        const R = new Float64Array(NB).fill(NaN);
-        for (const d of mem) {
-          const dx = d.sx - cx, dy = d.sy - cy, pr = d.dr / Math.sqrt(Math.max(1, zk)) + 9 / zk;   // the bubble's disc round the dot
-          for (let k = 0; k < NB; k++) {
-            const ph = k * TAU / NB, c0 = Math.cos(ph), s0 = Math.sin(ph), t = dx * c0 + dy * s0, e = -dx * s0 + dy * c0;
-            if (Math.abs(e) >= pr) continue;
-            const ex = t + Math.sqrt(pr * pr - e * e);
-            if (ex > 0 && !(R[k] >= ex)) R[k] = ex;
-          }
-        }
-        // rays that miss every disc (a centre in a gap): filled from their neighbours round the circle, then smoothed
-        const have = [...R.keys()].filter(k => R[k] === R[k]);
-        if (!have.length) return null;
-        for (let k = 0; k < NB; k++) if (R[k] !== R[k]) {
-          let a = k, b = k, da = 0, db = 0;
-          while (R[a] !== R[a]) { a = (a + NB - 1) % NB; da++; }
-          while (R[b] !== R[b]) { b = (b + 1) % NB; db++; }
-          R[k] = (R[a] * db + R[b] * da) / (da + db);
-        }
-        const pmin = 9 / zk;
-        for (let pass = 0; pass < 3; pass++) { const T = Float64Array.from(R); for (let k = 0; k < NB; k++) R[k] = Math.max(pmin, 0.25 * T[(k + NB - 1) % NB] + 0.5 * T[k] + 0.25 * T[(k + 1) % NB]); }
-        // r: a region-sized circle — area ∝ members (MARK_R per √member), and at least wide enough to hold its own name, as a
-        // region's circle does (so a small mark opens the space round it rather than shrinking); at most a third of the level
-        const nameR = (markTextW(markName(m).toUpperCase(), true) / 2 + 16) / zk;   // the name as it is set in a collapsed mark, and a margin
-        const r = Math.min(0.32 * R0, Math.max(22 / zk, nameR, MARK_R * Math.sqrt(mem.length)));
-        // the blend toward r can still be narrower than the name (a mark smaller than r): from v ≈ 0.5 the outline holds it
-        const hold = Math.min(nameR, 0.32 * R0) * clamp01((v - 0.2) / 0.3);
-        const Rn = R.map(x => Math.max((1 - v) * x + v * r, hold));
-        const warp = (x, y) => {
-          const dx = x - cx, dy = y - cy, rho = Math.hypot(dx, dy);
-          if (rho < 1e-9) return [x, y];
-          const th = Math.atan2(dy, dx), Rt = atBin(R, th), Rnt = atBin(Rn, th);
-          let q;
-          if (rho < Rt) q = rho * Rnt / Rt;
-          else {
-            const dl = Rnt - Rt, Fr = Math.max(1.5 * Math.max(Rt, Rnt), 2 * Math.abs(dl));
-            const u = (rho - Rt) / Fr;
-            q = u >= 1 ? rho : rho + dl * (1 - u) * (1 - u) * (1 + 2 * u);
-          }
-          return [cx + dx * q / rho, cy + dy * q / rho];
-        };
-        // the dots inside shrink a little with the space they are given (at most to 55%)
-        const Rm = d3.mean(R), shrink = 1 + (Math.max(0.55, Math.min(1, Math.sqrt(d3.mean(Rn) / Rm))) - 1) * v;
-        return { m, v, cx, cy, Rn, warp, shrink, n: mem.length, ids: new Set(mem.map(d => d.i)) };
+      // The marks view (markBodies): with marks showing, the level is laid out round them. The layout is worked out when
+      // the dots' own places change (the tilt, the slab: st.update) or the marks do, starting from the last one's places;
+      // when the marks change, or go on or off, the dots travel to their new places over 0.7 s.
+      let BL = null, blSig = null, blStamp = -1, stamp = 0, travel = null, travelRaf = 0;
+      const blPrev = new Map();
+      function bodyLayout() {
+        const sig = marksShown().map(m => m.id + ':' + markIdx(m).length + ':' + markName(m)).join('|');
+        if (sig === blSig && stamp === blStamp) return BL;
+        if (sig !== blSig) travel = { t0: performance.now(), from: new Map(dots.map(d => [d.i, [d.sx ?? d.bx, d.sy ?? d.by]])) };
+        blSig = sig; blStamp = stamp;
+        BL = sig ? markBodies(dots.filter(d => d.w >= 0.1), byI, { cx, cy, R: R0 }, blPrev) : null;
+        blPrev.clear();
+        if (BL) { for (const B of BL.bodies) blPrev.set(B.m.id, [B.x, B.y]); if (!BL.bodies.length && !BL.stray.size) BL = null; }
+        return BL;
       }
       function place() {
         const on = loupeOn() && FOC, zk = ZT.k, rl = RL / zk, zr = 1 / Math.sqrt(Math.max(1, zk));
-        const E = pullAmt(), cols = collapses(), wt = new Map(cols.map(c => [c.m.id, c.k]));
-        const off = E ? pullOffsets(wt) : null;
-        for (const d of dots) {
-          const o = off && off.get(d.i);
-          d.sx = d.bx + (o ? E * o[0] / o[2] : 0); d.sy = d.by + (o ? E * o[1] / o[2] : 0); d.cz = 1;
+        const lay = bodyLayout();
+        let e = 1;
+        if (travel) {
+          const u = reduce ? 1 : clamp01((performance.now() - travel.t0) / 700);
+          e = 1 - Math.pow(1 - u, 3);
+          if (u >= 1) travel = null; else if (!travelRaf) travelRaf = requestAnimationFrame(() => { travelRaf = 0; if (cur === st && scene.node().isConnected) place(); });
         }
-        // the collapses, one after another; each one's outline is carried through the ones after it
-        const warps = [], shapes = [];
-        for (const c of cols) {
-          const w = collapseOf(c.m, c.v, zk);
-          if (!w) continue;
-          for (const d of dots) { [d.sx, d.sy] = w.warp(d.sx, d.sy); if (w.ids.has(d.i)) d.cz *= w.shrink; }
-          for (const s2 of shapes) s2.pts = s2.pts.map(([x, y]) => w.warp(x, y));
-          shapes.push({ id: c.m.id, v: c.v, n: w.n, pts: w.Rn.map ? Array.from(w.Rn, (rr, k) => [w.cx + rr * Math.cos(k * TAU / NB), w.cy + rr * Math.sin(k * TAU / NB)]) : [] });
-          warps.push(w.warp);
-        }
-        st.warps = warps;
         for (const d of dots) {
-          d.ux = d.sx; d.uy = d.sy;   // where it is before the loupe (the marks' labels hold to this, so they stay put under it)
+          const t = lay && lay.pos.get(d.i), tx = t ? t[0] : d.bx, ty = t ? t[1] : d.by, f = travel && travel.from.get(d.i);
+          d.sx = f ? f[0] + (tx - f[0]) * e : tx; d.sy = f ? f[1] + (ty - f[1]) * e : ty;
+          d.cz = t ? 1 + (t[2] - 1) * e : 1; d.cf = t ? 1 + (t[3] - 1) * e : 1;
+        }
+        st.bodies = lay; st.bodyIn = lay ? e : 1;
+        for (const d of dots) {
           if (on) [d.x, d.y, d.z, d.inL] = fish(d.sx, d.sy, rl); else { d.x = d.sx; d.y = d.sy; d.z = 1; d.inL = false; }
         }
-        // a collapsed mark's outline: under the loupe too (its label keeps to the outline without it)
-        st.col = new Map(shapes.map(s2 => [s2.id, { v: s2.v, n: s2.n, upts: s2.pts, pts: on ? s2.pts.map(([x, y]) => fish(x, y, rl)) : s2.pts }]));
         for (const d of dots) d.rr = d.dr * d.z * zr * d.cz;
         dot.attr('cx', d => d.x.toFixed(1)).attr('cy', d => d.y.toFixed(1)).attr('r', d => d.rr.toFixed(2))
-          .style('opacity', d => d.op * (on && !d.inL ? 0.45 : 1));
+          .style('opacity', d => d.op * (on && !d.inL ? 0.45 : 1) * (d.inL ? 1 : d.cf));
         vring.attr('cx', d => d.x.toFixed(1)).attr('cy', d => d.y.toFixed(1)).attr('r', d => (d.rr + 2.6 * zr).toFixed(2)).style('opacity', d => d.op * (on && !d.inL ? 0.45 : 1));
-        for (const d of versioned) d.vp = d.vb.map(([x, y]) => { for (const w of warps) [x, y] = w(x, y); return on ? fish(x, y, rl) : [x, y]; });
+        for (const d of versioned) d.vp = d.vb.map(([x, y]) => { x += d.sx - d.bx; y += d.sy - d.by; return on ? fish(x, y, rl) : [x, y]; });   // an item's versions move with it
         line.attr('d', curve);
         marksSoon();
         ver.attr('display', d => unfolded(d) ? null : 'none');
@@ -3232,7 +3315,7 @@ async function viewField(p) {
         ring.attr('display', on ? null : 'none');
         if (!on) { bubbles.clear(); return; }
         ring.attr('cx', FOC[0]).attr('cy', FOC[1]).attr('r', rl);
-        const dist = d => Math.hypot(d.bx - FOC[0], d.by - FOC[1]);
+        const dist = d => Math.hypot(d.sx - FOC[0], d.sy - FOC[1]);
         bubbles.target(dots.filter(d => d.w >= 0.1 && dist(d) < rl).sort((p, q) => dist(p) - dist(q)).slice(0, NBUB), rl);
       }
       // Items written at one moment about one thing land on one spot, and a pile of dots can be neither read nor
@@ -3263,6 +3346,7 @@ async function viewField(p) {
         const ease = (px, py, dr) => { const dx = px - fx, dy = -(py - fy), m = Math.hypot(dx, dy) || 1e-9, rr = Math.min(lim * (1 - Math.exp(-0.8 * m / med)), R0 - dr - 3); return [cx + dx / m * rr, cy + dy / m * rr]; };
         for (const d of dots) { [d.bx, d.by] = ease(PX[d.i], PY[d.i], d.dr); d.w = WT[d.i]; }
         spread();
+        stamp++;
         // a version's place: the item's meaning, at the version's moment on the time axis, projected and eased like a dot
         for (const d of versioned) {
           const q = Q[d.i];
@@ -3282,7 +3366,7 @@ async function viewField(p) {
       st.loupe = place;
       st.hover = place;
       st.tick = () => {};
-      st.byI = byI;
+      st.byI = byI; st.R0 = R0;
       st.summary = () => `≈${fmtW(d3.sum(dots, d => d.w))} of ${dots.length} items inside · ${lines.length} ${lines.length === 1 ? FW.edge : FW.edges} among them${ext.size ? ` · ${d3.sum(ext.values())} to elsewhere` : ''}`;
     }
 
@@ -3486,16 +3570,17 @@ async function viewField(p) {
     // mark is lifted with its note showing. Decided from the pointer's place rather than enter/leave on the shapes, so
     // crossing the dots inside a bubble does not flicker it.
     const markUnder = ev => {
-      const lab = ev.target && ev.target.closest ? ev.target.closest('.fml') : null;
-      if (lab) return [d3.select(lab).datum().r.m.id, true];
+      const note = ev.target && ev.target.closest ? ev.target.closest('.fmnote') : null;
+      if (note) return [d3.select(note).datum().B.m.id, false];
       if (!cur || cur.kind !== 'items' || !cur.gUnder) return [null, false];
-      for (const p of cur.gUnder.selectAll('path.fmbhit').nodes().reverse()) {   // the last drawn is the smallest
+      let hit = null;   // the smallest body under the pointer
+      for (const p of cur.gUnder.selectAll('.fmbhit').nodes()) {
         const m = p.getScreenCTM();
         if (!m) continue;
-        const q = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m.inverse());
-        if (p.isPointInFill(q)) return [d3.select(p).datum().m.id, false];
+        const B = d3.select(p).datum();
+        if (p.isPointInFill(new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m.inverse())) && (!hit || B.a * B.b < hit.a * hit.b)) hit = B;
       }
-      return [null, false];
+      return [hit ? hit.m.id : null, false];
     };
     svg.on('mousemove.marks', ev => {
       MARK.geomHover = !!cur && cur.kind === 'items';
@@ -3744,6 +3829,10 @@ async function viewField(p) {
   main.querySelectorAll('.fbar a[data-lasso]').forEach(a => a.onclick = ev => { ev.preventDefault(); lassoSet(!MARK.on); });
   const fabMark = main.querySelector('[data-fab="mark"]');
   if (fabMark) fabMark.onclick = () => lassoSet(!MARK.on);
+  // the marks view on or off: the same switch as the bar's "marks" layer (off: the level as it lies without them)
+  const marksToggle = () => { L.marks = L.marks === false; saveFieldState(); const cb = main.querySelector('input[data-layer="marks"]'); if (cb) cb.checked = L.marks !== false; const fb = main.querySelector('[data-fab="marks"]'); if (fb) fb.classList.toggle('on', L.marks !== false); pres.marks && pres.marks(); };
+  const fabMarks = main.querySelector('[data-fab="marks"]');
+  if (fabMarks) { fabMarks.classList.toggle('on', L.marks !== false); fabMarks.onclick = marksToggle; }
   // l toggles the lasso; Esc puts it (or an unsaved card) away before the view's own Esc goes up a level
   const onMarkKey = ev => {
     if (stale(g) || !wrap.isConnected) { removeEventListener('keydown', onMarkKey, true); return; }
@@ -3756,6 +3845,7 @@ async function viewField(p) {
     }
     if (typing || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (ev.key === 'l') { ev.preventDefault(); ev.stopImmediatePropagation(); lassoSet(!MARK.on); }
+    else if (ev.key === 'v') { ev.preventDefault(); ev.stopImmediatePropagation(); marksToggle(); }
   };
   addEventListener('keydown', onMarkKey, true);
   renderMarks();
