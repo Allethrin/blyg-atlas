@@ -16,5 +16,6 @@ entity-aliases.json
 entity-build.log
 terms-sidecar.json
 .DS_Store
-# a local rendering of the README
+# local renderings of the README and the roadmap
 README.html
+ROADMAP.html

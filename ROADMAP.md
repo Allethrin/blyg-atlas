@@ -12,7 +12,7 @@ Left out on purpose: a publisher, the entity map and flow tab, any hosted versio
 
 ## Since v0.1.0, not yet tagged
 
-- **Marks.** Lasso items on the Field's bottom level and give the set a name and a note. A mark is tied to its items, not to coordinates, so it survives a new layout. Each mark has a computed shape block, agent tools (`blyg_marks`, `blyg_mark`, `blyg_mark_propose`, `blyg_mark_note`) and a `mark` command. At the bottom level the marks are a view of their own: each is a body that holds its items, its name on it and its note in the margin. A local model can suggest a name and a note from a prompt you write; no prompt ships.
+- **Marks.** Lasso items on the Field and give the set a name and a note. A mark is tied to its items, not to coordinates, so it survives a new layout. Each mark has a computed shape block, agent tools (`blyg_marks`, `blyg_mark`, `blyg_mark_propose`, `blyg_mark_note`) and a `mark` command. At the bottom level the marks are a view of their own: each is a body that holds its items, its name on it and its note in the margin. A local model can suggest a name and a note from a prompt you write; no prompt ships.
 
 ## Running it without thinking about processes
 

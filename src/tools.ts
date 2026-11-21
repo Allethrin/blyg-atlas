@@ -166,7 +166,7 @@ export const toolDefs: Tool[] = [
   },
   {
     name: 'blyg_mark',
-    description: "Open a mark: its shape block (computed facts about the set, no model: who and when, which regions it sits in, its shape on the map and whether that shape holds in the full embedding, links in and out, other marks it touches; every number next to what a random set scores), the notes on it, and the member texts oldest first up to a token budget (the rest named, readable with blyg_item). Under 12 items the block is a table of pairs instead of a shape. The block is facts: the reading is yours, under the reader's prompt.",
+    description: "Open a mark: its shape block (computed facts about the set, no model: who and when, which regions it sits in, its shape on the map and whether that shape holds in the full embedding, links in and out, other marks it touches; each measure that has one next to what a random set scores), the notes on it, and the member texts oldest first up to a token budget (the rest named, readable with blyg_item). Under 12 items the block is a table of pairs instead of a shape. The block is facts: the reading is yours, under the reader's prompt.",
     input_schema: {
       type: 'object',
       properties: {

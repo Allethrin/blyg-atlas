@@ -745,15 +745,15 @@ async function viewField(p) {
     if (used < words.length && out.length) out[out.length - 1] = out[out.length - 1].replace(/[\s,.;:—–-]*\S*$/, '') + '…';
     return out;
   }
-  // a note's first sentence: up to the first stop that ends one (not an initial's or an abbreviation's, as in "Levi R.
-  // Bryant"), and at least 60 characters, so a stop inside a quoted title or a three-word opener does not end it
+  // a note's first sentence: up to the first stop that ends one (not an initial's or an abbreviation's, as in "J. R.
+  // Smith"), and at least 60 characters, so a stop inside a quoted title or a three-word opener does not end it
   const firstSentence = note => {
     const t = String(note || '').trim(), re = /[.?!]["”’)]?(?=\s|$)/g;
     for (let m; (m = re.exec(t));) { const before = t.slice(0, m.index), last = (/(\S+)$/.exec(before) || ['', ''])[1]; if (m.index + m[0].length < 60 && m.index + m[0].length < t.length) continue; if (m[0][0] !== '.' || !(/^[A-Z]$/.test(last) || /^(mr|mrs|ms|dr|st|vs|etc|e\.g|i\.e|cf|no|vol|sept?|oct|nov|dec|jan|feb|aug)$/i.test(last))) return t.slice(0, m.index + m[0].length); }
     return t;
   };
   // dots: the level's dots that count ({ i, bx, by, dr, p }); byI: all of the level's, by index; ring: the level's circle;
-  // prev: mark id → [x, y] of the last layout (bodies start from there, so they hold still while the plane tilts)
+  // prev: mark id → [x, y] of the last layout (bodies start from there, so one layout carries over to the next as the plane tilts)
   function markBodies(dots, byI, ring, prev) {
     const cl = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
     const bodies = [], stray = new Map(), inBody = new Set();
@@ -885,11 +885,11 @@ async function viewField(p) {
     const b = { x0: d3.min(main, q => q[0]), y0: d3.min(main, q => q[1]), x1: d3.max(main, q => q[0]), y1: d3.max(main, q => q[1]), cx: d3.mean(main, q => q[0]), cy: d3.mean(main, q => q[1]), area: ma };
     return { d: rings.map(r => blobLine(r)).join(''), b };
   }
-  // At the tour's bottom level a mark is one simple region (Ben, Nov 20: "a smooth/clear and probably thicker boundary,
+  // At the bottom level of the circles view a mark is one simple region (the tour has the marks view, above; Ben, Nov 20: "a smooth/clear and probably thicker boundary,
   // more like the other regions … simple and smoothed out a lot. abstracted"): along each ray from the members' middle,
   // how far out their discs reach, R(θ); that outline kept to its first few harmonics, so it is one smooth lobe-y shape
   // with no islands and no dents round single dots; then lifted until it covers nearly all of R. A mark split across
-  // the level is one shape over the gap (the glom, below, has pulled its members in first).
+  // the level is one shape over the gap.
   const HULL_NB = 96, HULL_K = 3;
   function markHull(pl) {
     if (!pl.length) return null;
@@ -2070,10 +2070,10 @@ async function viewField(p) {
     // the pinch zoom is a transform on everything drawn (gZoom); the levels themselves never know about it
     const gZoom = svg.append('g');
     const gScenes = gZoom.append('g');
-    // marks, under the pinch zoom. At the bottom a bubble lies under the dots it holds (the scene's own gUnder), where
-    // they sit now (lens, pull and all); above it a bubble goes round the dots a leaf circle shows of the members, or
-    // round the circle that holds them. Members outside the slab or the time window (weight < 0.1) are left out, as
-    // their dots are. The names and notes are over everything.
+    // marks, under the pinch zoom. At the bottom level they are the marks view (drawBodies): each body under the dots it
+    // holds (the scene's own gUnder), the names over everything. Above it a mark draws nothing of its own; a circle that
+    // holds members of any marks carries a count. Members outside the slab or the time window (weight < 0.1) are left
+    // out, as their dots are.
     const gMarks = gZoom.append('g').attr('class', 'fmarks'), gMB = gMarks.append('g'), gML = gMarks.append('g');
     const gNotes = svg.append('g').attr('class', 'fmnotes');   // the notes in the margins: outside the pinch zoom
     markDefs(defs);
@@ -3651,7 +3651,7 @@ async function viewField(p) {
         for (const i of idx) { const p2 = cOf(F.points[i]).split('.'); let k = 0; while (k < common.length && common[k] === p2[k]) k++; common = common.slice(0, k); }
         navTo(common.join('.'), [0, 1, 2, 3].map(k => d3.mean(idx, i => Q[i][k])));
       },
-      marks: () => { if (cur && cur.kind === 'items' && cur.zoomed) cur.zoomed(); else marksSoon(); },   // a collapse moves the dots
+      marks: () => { if (cur && cur.kind === 'items' && cur.zoomed) cur.zoomed(); else marksSoon(); },   // the marks view moves the dots
       lasso: () => { if (cur && cur.hover) cur.hover(); },   // the loupe steps aside while the lasso is out, and comes back
     };
   }

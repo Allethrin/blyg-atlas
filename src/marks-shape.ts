@@ -6,8 +6,8 @@
 //
 // Two spaces, never mixed. "On the map" is the layout the reader looks at: the meaning-in-3D + time layout of the tour
 // (pT), a flattening. "In meaning" is the full embedding, centred (the direction every item shares removed, since raw
-// cosine between random items on this embedder is ~0.77). Every number is reported next to its floor: what a random
-// set of the same size scores on this atlas. Under PAIRS_BELOW items there is no shape to measure (the shuffled floor
+// cosine between random items on this embedder is ~0.77). The measures that have one are reported next to their floor: what a
+// random set of the same size scores on this atlas. Under PAIRS_BELOW items there is no shape to measure (the shuffled floor
 // is as high as the signal), so the block switches to a table of pairs.
 //
 // The cut-offs below were read off a probe of one atlas (Nov 2026, 7,992 items, nomic-embed-text) on stand-in marks,
