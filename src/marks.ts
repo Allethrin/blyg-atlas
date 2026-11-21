@@ -209,9 +209,11 @@ export async function suggestModel(d: Database.Database, members: MemberRef[], v
   const raw = String(((await r.json()) as any)?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   // a name prompt may ask for several (one per line, best first): every line is an option, the first is the suggestion
   // a small model sometimes wraps its list in markdown, kind tags or commentary: keep only short name-like lines
-  const clean = (l: string) => l.replace(/\*\*|__|`/g, '').replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').replace(/^(name|title)\s*:\s*/i, '').replace(/\s*\((?:place|coined land|creature|pattern|state)\)\s*$/i, '').replace(/^["'“*#\s]+|["'”*\s.]+$/g, '');
-  const nameLike = (l: string) => l && !/[:;]$/.test(l) && !/^(focus|note)\b/i.test(l) && l.split(/\s+/).length <= 6;
-  // shuffled: a model lists its kinds in the order the prompt names them, so the first would always be the same kind
+  // (list markers, emphasis, a leading "name:", a short tag in brackets after the name, quotes; a line that still has a
+  // colon or runs past six words is commentary)
+  const clean = (l: string) => l.replace(/\*\*|__|`/g, '').replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').replace(/^(name|title)\s*:\s*/i, '').replace(/\s*[(\[][^()\[\]]{1,24}[)\]]\s*$/, '').replace(/^["'“*#\s]+|["'”*\s.]+$/g, '');
+  const nameLike = (l: string) => l && !/[:;]/.test(l) && l.split(/\s+/).length <= 6;
+  // shuffled: a model tends to list its options in the same order every time, so the first would always be the same sort
   const options = what === 'name' ? shuffle([...new Set(raw.split('\n').map(clean).filter(nameLike))].slice(0, 8)) : [];
   // a note is the first paragraph, without markdown
   const text = what === 'name' ? (options[0] ?? '') : (raw.split(/\n\s*\n/)[0] ?? '').replace(/\*\*|__/g, '').trim().slice(0, 800);
