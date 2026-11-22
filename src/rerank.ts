@@ -25,19 +25,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { ENV_PATH, MODEL_CACHE } from './config.js';
-
-// Fill env gaps from the repo-root .env (gitignored) — existing env vars win.
-// Needed when this runs as a subprocess whose environment may not carry API keys.
-try {
-  const envFile = fs.readFileSync(ENV_PATH, 'utf-8');
-  for (const line of envFile.split('\n')) {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
-    if (m && !(m[1] in process.env)) {
-      process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
-    }
-  }
-} catch { /* no .env — fine, rely on shell env */ }
+import { MODEL_CACHE } from './config.js';   // (importing config also fills env gaps from the repo-root .env)
 
 const JINA_API_KEY = process.env.JINA_API_KEY || '';
 const JINA_DEFAULT_MODEL = 'jina-reranker-v2-base-multilingual';

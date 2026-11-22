@@ -29,7 +29,14 @@ interface AtlasConfig {
     time_fixed?: boolean;                     // meaning + time: no control turns time out of the horizontal (default true)
   };
   marks?: {             // suggested names and notes for a fresh lasso. Off until both a model and a prompt file are set.
-    model?: string;     // an Ollama model, e.g. "qwen3.5:4b" — local only; the lassoed texts' titles and shape block go to it
+    model?: string;     // the model that suggests them: an Ollama model (e.g. "qwen3.5:4b"), or, with `provider`, a hosted one
+                        // (e.g. "glm-5.3-flash"). Either way the lassoed items' titles and shape block are what it reads.
+    provider?: {        // a hosted chat API (OpenAI-compatible) instead of Ollama. The titles and shape block are sent to it.
+      base_url: string;               // e.g. "https://api.z.ai/api/paas/v4" (/chat/completions is added)
+      api_key_env?: string;           // the environment variable holding the key, e.g. "ZHIPU_API_KEY" (a line in .env works too)
+      params?: Record<string, unknown>;   // merged into each request as given: reasoning settings and the like differ per provider
+      timeout_s?: number;             // how long to wait for a reply (default 60)
+    };
     prompts?: { name?: string; note?: string };   // paths to prompt files the reader writes. {{block}} and {{titles}} are
                         // filled in; without them the file is the system prompt and the block + titles the message.
                         // <!-- comments --> are dropped; a file that is empty after that turns the suggestion off.
@@ -52,7 +59,15 @@ export const OWN_ORIGIN: string | null = process.env.BLYG_OWN_ORIGIN || CONFIG.o
 export const PUBLISHER: string | null = local(process.env.BLYG_PUBLISHER || CONFIG.publisher) || null;
 export const PORT = Number(process.env.BLYG_PORT || CONFIG.port || 5053);
 export const FIELD_UI = { modes: ['tour'], spaces: ['mt'], time_fixed: true, ...(CONFIG.field || {}) };
-export const MARKS_AI = { model: process.env.BLYG_MARK_MODEL || CONFIG.marks?.model || null, prompts: { name: local(process.env.BLYG_MARK_PROMPT_NAME || CONFIG.marks?.prompts?.name) ?? null, note: local(process.env.BLYG_MARK_PROMPT_NOTE || CONFIG.marks?.prompts?.note) ?? null } };
+export const MARKS_AI = { model: process.env.BLYG_MARK_MODEL || CONFIG.marks?.model || null, provider: CONFIG.marks?.provider?.base_url ? CONFIG.marks.provider : null, prompts: { name: local(process.env.BLYG_MARK_PROMPT_NAME || CONFIG.marks?.prompts?.name) ?? null, note: local(process.env.BLYG_MARK_PROMPT_NOTE || CONFIG.marks?.prompts?.note) ?? null } };
 export const SIDECAR_PATH = path.join(ATLAS_DIR, 'field-sidecar.json');
 export const MODEL_CACHE = path.join(ATLAS_DIR, '.model-cache');
 export const ENV_PATH = path.join(ATLAS_DIR, '.env');
+// Fill env gaps from the repo-root .env (gitignored) — existing env vars win. API keys live there (JINA_API_KEY for the
+// hosted reranker, a marks provider's key), so a dashboard started without them in its shell still finds them.
+try {
+  for (const line of fs.readFileSync(ENV_PATH, 'utf-8').split('\n')) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  }
+} catch { /* no .env — fine, rely on the shell's environment */ }

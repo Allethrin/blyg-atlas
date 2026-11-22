@@ -291,7 +291,7 @@ function markSaveCard(items, gesture, view, x, y, onDone) {
   };
   $ok.onclick = save;
   // Suggestions, grey in the empty field; Tab takes one. First the words that set the set apart (no model, at once), then,
-  // when the reader has set a local model and written a prompt (atlas.config.json `marks`), what that model offers.
+  // when the reader has set a model and written a prompt (atlas.config.json `marks`), what that model offers.
   const sug = { name: '', note: '' }, from = { name: '', note: '' }, $hint = el.querySelector('.fmhint');
   let opts = [], at = 0;   // several names offered (the model's, then the words that set it apart): ↓/↑ in the empty field steps through them
   let asking = '', why = '';   // asking: what is on its way ('qwen… for a note'); why: the model tier's reason for giving none
@@ -325,16 +325,20 @@ function markSaveCard(items, gesture, view, x, y, onDone) {
     let feat = null;
     try { feat = await api('/features'); } catch { /* none */ }
     if (!feat || !feat.mark_model) return;
-    for (const what of ['name', 'note']) {
-      if (MARK.pending !== me) return;   // closed or saved: ask nothing more
-      asking = `${feat.mark_model} for a ${what}`; hint();
+    // both asked at once, each offered as it comes (a hosted model answers them in parallel; Ollama may queue the second)
+    if (MARK.pending !== me) return;   // closed or saved: ask nothing
+    const waiting = new Set(['name', 'note']);
+    const say = () => { asking = waiting.size ? `${feat.mark_model} for a ${[...waiting].join(' and a ')}` : ''; hint(); };
+    say();
+    await Promise.all([...waiting].map(async what => {
       let r = null;
       try { r = await post('/marks/suggest', { members, view, tier: 'model', what }); } catch { /* keep what there is */ }
-      asking = '';
+      waiting.delete(what);
+      if (MARK.pending !== me) return;   // closed or saved meanwhile
       if (r && r.text) offer(what, r);
       else if (r && r.reason && what === 'name' && !/^no (model|name prompt|note prompt)/.test(r.reason)) why = `${feat.mark_model} offers nothing: ${r.reason}`;   // an unwritten prompt is not news; a failure is   // the note's reason is the same story, said once
-      hint();
-    }
+      say();
+    }));
   })();
   $name.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); save(); } });
   el.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } });
@@ -717,7 +721,8 @@ async function viewField(p) {
   //   · a mark with only a few members here has no body on this level; they are cloud dots with a dashed ring (strays),
   //     so a mark smeared across levels by a new layout is one body where it mostly lives, not an outline over the gap.
   // Display only, like the loupe: item positions, the lasso's maths and every number about a mark read the real places.
-  // The name runs along the body when its long axis rises to the right (as one hand letters a map), else it is stacked.
+  // The name runs along the body when its long axis falls to the right, else it leans that way a little (Ben, Nov 21:
+  // the other way from a map's rising lettering, top toward the future when time runs left to right).
   const BODY = { fs: 12.5, ls: 0.15, lh: 15.5, maxAspect: 2.1, packing: 0.4, gap: 9, rank: 0.55, memberR: 0.92, cloudR: 0.85, cloudOp: 0.55, band: 1.75 };
   const bodyTextW = (() => {
     const cx = document.createElement('canvas').getContext('2d'), memo = new Map();
@@ -770,8 +775,8 @@ async function viewField(p) {
       const tr = sxx + syy, disc = Math.sqrt(Math.max(0, tr * tr / 4 - (sxx * syy - sxy * sxy))), l1 = tr / 2 + disc, l2 = Math.max(1e-3, tr / 2 - disc);
       const aspect0 = cl(Math.sqrt(l1 / l2), 1, BODY.maxAspect);
       if (th > Math.PI / 2) th -= Math.PI; if (th <= -Math.PI / 2) th += Math.PI;
-      const deg = th * 180 / Math.PI, along = aspect0 >= 1.25 && deg >= -52 && deg <= 8;   // (screen y runs down: a negative angle rises to the right)
-      const ta = (along ? cl(deg, -40, 4) : -8) * Math.PI / 180, phi = ta - th;
+      const deg = th * 180 / Math.PI, along = aspect0 >= 1.25 && deg >= -8 && deg <= 52;   // (screen y runs down: a positive angle falls to the right)
+      const ta = (along ? cl(deg, -4, 40) : 8) * Math.PI / 180, phi = ta - th;
       const aspect = along ? aspect0 : 1 + (aspect0 - 1) * 0.6 * Math.cos(phi) ** 2;   // a body its name cannot run along is drawn rounder
       const nl = bodyNameLines(markName(m), along ? 175 : Math.abs(deg) > 55 ? 100 : 135), nW = Math.max(...nl.map(bodyTextW));
       const col = [0, 0, 0];
@@ -932,14 +937,12 @@ async function viewField(p) {
   // while the label is hovered). Laid inside the bubble's upper part when the bubble holds them, over it when it does
   // not; then nudged apart, the biggest marks keeping their places. Sizes in screen px; positions in the drawing's own
   // units, under a zoom zk.
-  // a name's width as it is set: spaced capitals, 10.5 px at .16em; in a collapsed mark 11 px at .1em (measured, so the
-  // circle can be sized to hold it)
+  // a name's width as it is set: spaced capitals, 10.5 px at .16em (measured)
   const markTextW = (() => {
     const cx = document.createElement('canvas').getContext('2d'), memo = new Map();
-    return (t, col) => {
-      const k = (col ? 'c' : 'o') + t;
-      if (!memo.has(k)) { const fs = col ? 11 : 10.5; cx.font = `600 ${fs}px Georgia, "Iowan Old Style", serif`; memo.set(k, cx.measureText(t).width + t.length * fs * (col ? 0.1 : 0.16)); }
-      return memo.get(k);
+    return t => {
+      if (!memo.has(t)) { cx.font = `600 10.5px Georgia, "Iowan Old Style", serif`; memo.set(t, cx.measureText(t).width + t.length * 10.5 * 0.16); }
+      return memo.get(t);
     };
   })();
   const MARK_TYPE = { name: 10.5, nameW: 8.3, nameH: 15, note: 11.5, noteW: 5.7, noteH: 14.5, gloss: 46, glossLines: 2, full: 54, fullLines: 14 };
@@ -969,7 +972,7 @@ async function viewField(p) {
       // the lines of one way of setting the label: with its note (as a gloss, or all of it while hovered), or bare
       // nameMax: inside a mark, a name wider than this is set on two or three lines, a word or two each, as a map stacks one
       const nameLines = nameMax => {
-        if (!nameMax || markTextW(name, !!r.col) <= nameMax) return [name];
+        if (!nameMax || markTextW(name) <= nameMax) return [name];
         const out = [];
         for (const wd of name.split(/\s+/)) { const last = out[out.length - 1]; if (last && markTextW(last + ' ' + wd) <= nameMax) out[out.length - 1] = last + ' ' + wd; else out.push(wd); }
         return out.length <= 3 ? out : [name];
@@ -977,20 +980,16 @@ async function viewField(p) {
       const setLines = (withNote, wn = T.gloss, wl = T.glossLines, nameMax = 0) => {
         const lines = nameLines(nameMax).map(t => ({ t, c: 'mn', h: T.nameH - 1 }));
         lines[lines.length - 1].h = T.nameH;
-        if (r.col) lines.push({ t: `∙ ${r.col.n} ∙`, c: 'mc', h: 13 });   // collapsed: its count, as a region's circle has
-        // collapsed: the name and count sit in the middle of the circle, and the note hangs just under its lower edge
-        const gap = r.col && note && withNote ? Math.max(0, (b.y1 - b.cy) * zk - (T.nameH + 13) / 2 + 6) : 0;
-        if (gap) lines.push({ t: '', c: 'gap', h: gap });
         // round a whole circle (above the bottom level) the circle's own name is inside it: the mark's words go outside, one line of gloss
         if (note && withNote) for (const t of wrapLines(note, open ? T.full : wn, open ? T.fullLines : r.ring ? 1 : wl)) lines.push({ t, c: 'mt', h: T.noteH });
         if (hn) lines.push({ t: hn, c: 'mh', h: 14 });
-        const w = Math.max(...lines.map(q => q.c === 'mn' ? markTextW(q.t, !!r.col) : q.t.length * T.noteW)), h = d3.sum(lines, q => q.h);
-        return { lines, w, h, gap };
+        const w = Math.max(...lines.map(q => q.c === 'mn' ? markTextW(q.t) : q.t.length * T.noteW)), h = d3.sum(lines, q => q.h);
+        return { lines, w, h };
       };
       const ws = (b.x1 - b.x0) * zk, hs = (b.y1 - b.y0) * zk;
       const clashAt = (x, y, w, h) => (top !== undefined && y < top + 2) || placed.some(p => Math.abs(p.x - x) < (p.w + w) / 2 + 8 && y < p.y + p.h + 4 && y + h > p.y - 4);
       let S, ax, ay, inside, dy = 0;
-      if (r.hull && !r.col) {
+      if (r.hull) {
         // the bottom level's regions: the label stays on its own mark — inside it (the note wrapped to the mark's own
         // width, three short lines, a little above its middle), else just above it, else just under it; with its note
         // if one of those is free, else bare (the note is on hover and in the card); only then nudged. A hovered label
@@ -1015,12 +1014,11 @@ async function viewField(p) {
       } else {
         S = setLines(true);
         const { w, h } = S;
-        const hc = r.col ? T.nameH + 13 : h;   // the part centred in a collapsed mark
-        inside = !!r.col || (!r.ring && hs >= Math.min(h, T.nameH + 2 * T.noteH) + 26 && ws >= Math.min(w, 150) + 18);
-        ax = b.cx * zk; ay = r.col ? b.cy * zk - hc / 2 + 2 : inside ? b.y0 * zk + 14 : b.y0 * zk - h - 3;   // collapsed: centred in it, as a region's name
+        inside = !r.ring && hs >= Math.min(h, T.nameH + 2 * T.noteH) + 26 && ws >= Math.min(w, 150) + 18;
+        ax = b.cx * zk; ay = inside ? b.y0 * zk + 14 : b.y0 * zk - h - 3;
         if (!inside && top !== undefined && ay < top + 4) ay = b.y1 * zk + 4;   // no room above (the top of the view): under it
         // the nearest free spot: up and down in 13 px steps, then sideways
-        if (!r.col && clashAt(ax, ay, w, h)) {   // a collapsed mark's name stays in its circle; the others move round it
+        if (clashAt(ax, ay, w, h)) {
           let best = null;
           for (const cx of [0, -1, 1, -2, 2]) for (let k = -8; k <= 8; k++) {
             const ox = cx * (w / 2 + 30), oy = k * 13, cost = Math.abs(ox) * 0.7 + Math.abs(oy);
@@ -1029,11 +1027,11 @@ async function viewField(p) {
           if (best) { ax += best[0]; dy = best[1]; }
         }
       }
-      const { lines, w, h, gap } = S, hc = r.col ? T.nameH + 13 : h;
+      const { lines, w, h } = S;
       placed.push({ x: ax, y: ay + dy, w, h });
       let y = 0;
       for (const q of lines) { y += q.h; q.y = y - 4; }
-      out.push({ r, x: ax / zk, y: (ay + dy) / zk, lines, inside, w, h, open, py: gap ? hc + gap - 4 : 0, nw: markTextW(name, !!r.col) });   // py: where the plate starts (under a collapsed mark's circle)
+      out.push({ r, x: ax / zk, y: (ay + dy) / zk, lines, inside, w, h, open, nw: markTextW(name) });
     }
     return out;
   }
@@ -1041,9 +1039,6 @@ async function viewField(p) {
   function markDefs(defs) {
     const gr = defs.append('radialGradient').attr('id', 'fmarkfill').attr('cx', '50%').attr('cy', '45%').attr('r', '62%');
     gr.selectAll('stop').data([[0, 0.2], [0.65, 0.12], [1, 0.07]]).join('stop').attr('offset', s => s[0]).style('stop-color', 'var(--mark)').style('stop-opacity', s => s[1]);
-    // a collapsed mark, a region of its own: a little stronger, still soft enough that two overlapping do not wash out
-    const gc = defs.append('radialGradient').attr('id', 'fmarkfillc').attr('cx', '50%').attr('cy', '42%').attr('r', '58%');
-    gc.selectAll('stop').data([[0, 0.3], [0.7, 0.2], [1, 0.13]]).join('stop').attr('offset', s => s[0]).style('stop-color', 'var(--mark)').style('stop-opacity', s => s[1]);
   }
   // The SVG drawing (tour and blobs): the bubbles into gB (under the dots at the bottom level), the labels into gL, each
   // keyed by mark and updated in place. `places(m)` in the group's units; `redraw` asks the presentation for a frame.
@@ -1052,12 +1047,6 @@ async function viewField(p) {
     const rows = [];
     for (const m of marksShown()) {
       const pl = places(m);
-      if (pl.shape) {   // collapsed: its outline is given, and its label sits in its middle
-        const u = pl.ushape, b = { x0: d3.min(u, q => q[0]), y0: d3.min(u, q => q[1]), x1: d3.max(u, q => q[0]), y1: d3.max(u, q => q[1]), cx: d3.mean(u, q => q[0]), cy: d3.mean(u, q => q[1]) };
-        b.area = (b.x1 - b.x0) * (b.y1 - b.y0);
-        rows.push({ m, blob: { d: colLine(pl.shape), b }, lb: b, col: pl.col, hd: colLine(pl.ushape) });
-        continue;
-      }
       const shape = opts.bubble ? markHull : markBlob;   // the bottom level: one smooth region per mark
       const blob = shape(pl);
       if (!blob) continue;
@@ -1076,7 +1065,7 @@ async function viewField(p) {
     gB.selectAll('path.fmb').filter(function () { return !this.parentNode.classList.contains('fmg'); }).remove();   // drawn before the casing
     const mg = gB.selectAll('g.fmg').data(order, key).join(e => { const g2 = e.append('g').attr('class', 'fmg'); g2.append('path').attr('class', 'fmk'); g2.append('path').attr('class', 'fmb'); return g2; }).order();
     mg.select('path.fmk').attr('d', r => r.blob.d).classed('ring', r => r.ring).classed('minor', r => r.minor);
-    state(mg.select('path.fmb').attr('d', r => r.blob.d), r => r).classed('ring', r => r.ring).classed('col', r => !!r.col).classed('minor', r => r.minor).classed('hull', !!opts.bubble);
+    state(mg.select('path.fmb').attr('d', r => r.blob.d), r => r).classed('ring', r => r.ring).classed('minor', r => r.minor).classed('hull', !!opts.bubble);
     // opts.bubble (the bottom level): the inside of a bubble is a target too — an invisible copy of it under the dots (so a
     // dot keeps the pointer), drawn as the bubble is without the loupe: the loupe leaves the point under the cursor where
     // it is, so the cursor is tested against the sheet as it lies there. The smaller of two overlapping is on top.
@@ -1096,21 +1085,20 @@ async function viewField(p) {
         .on('mouseleave', (ev, l) => { if (MARK.geomHover) return; MARK.lab = false; if (MARK.hov === l.r.m.id) { MARK.hov = null; redraw(true); } });
       return g2;
     });
-    state(lg, l => l.r).classed('in', l => l.inside).classed('col', l => !!l.r.col).attr('transform', l => `translate(${l.x.toFixed(1)},${l.y.toFixed(1)}) scale(${(1 / zk).toFixed(4)})`);
-    lg.select('rect.fmplate').attr('x', l => -l.w / 2 - 10).attr('y', l => l.py - 4).attr('width', l => l.w + 20).attr('height', l => l.h - l.py + 11).attr('rx', 7);
+    state(lg, l => l.r).classed('in', l => l.inside).attr('transform', l => `translate(${l.x.toFixed(1)},${l.y.toFixed(1)}) scale(${(1 / zk).toFixed(4)})`);
+    lg.select('rect.fmplate').attr('x', l => -l.w / 2 - 10).attr('y', -4).attr('width', l => l.w + 20).attr('height', l => l.h + 11).attr('rx', 7);
     lg.select('text').each(function (l) {
       d3.select(this).selectAll('tspan').data(l.lines).join('tspan').attr('class', q => q.c).attr('x', 0).attr('y', q => q.y).text(q => q.t);
     });
     // The pointer's targets, measured from what was drawn (Safari sets the same text wider and lower than Chromium, so a
     // box worked out from font sizes misses the letters there): per line with words, the span from its first glyph to its
-    // last (getExtentOfChar), padded so the lines of one label touch. The blank line between a collapsed mark's name and
-    // its note gets none, so the dots inside the circle stay reachable.
+    // last (getExtentOfChar), padded so the lines of one label touch.
     lg.each(function (l) {
       const text = this.querySelector('text'), boxes = [];
       let at = 0;
       for (const q of l.lines) {
         const n = q.t.length;
-        if (n && q.c !== 'gap') {
+        if (n) {
           try {
             const a = text.getExtentOfChar(at), b = text.getExtentOfChar(at + n - 1);
             const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x + a.width, b.x + b.width), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y + a.height, b.y + b.height);

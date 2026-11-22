@@ -168,9 +168,10 @@ export function renderMarkList(rows: ReturnType<typeof listMarks>): string {
 
 // ---------------------------------------------------------------- suggestions for a fresh lasso
 // Two tiers. The first is no model: the words that set the set apart (the same rule that names regions), instant. The
-// second, only when the reader has set a local model and written a prompt (atlas.config.json `marks`), hands that model
-// the shape block and the member titles — never the full texts — and returns what it wrote. No prompt ships with the
-// atlas: what a mark is called is the reader's to decide, so the prompt is a file they own.
+// second, only when the reader has set a model and written a prompt (atlas.config.json `marks`), hands that model the
+// shape block and the member titles — never the full texts — and returns what it wrote. The model is a local one through
+// Ollama, or a hosted one through an OpenAI-compatible API (`marks.provider`), which the block and titles are then sent
+// to. No prompt ships with the atlas: what a mark is called is the reader's to decide, so the prompt is a file they own.
 
 const shuffle = <T>(xs: T[]): T[] => { const a = [...xs]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
@@ -201,21 +202,36 @@ export async function suggestModel(d: Database.Database, members: MemberRef[], v
   const messages = templated
     ? [{ role: 'user', content: prompt.replace(/\{\{block\}\}/g, block).replace(/\{\{titles\}\}/g, titles) }]
     : [{ role: 'system', content: prompt }, { role: 'user', content: `${block}\n\nMember titles:\n${titles}` }];
-  const r = await fetch(`${OLLAMA_URL}/api/chat`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(60_000),
-    body: JSON.stringify({ model, messages, stream: false, think: false, keep_alive: '15m', options: { temperature: 0.8, num_predict: what === 'name' ? 100 : 200 } }),
-  });
-  if (!r.ok) return { text: null, reason: `Ollama ${r.status}: ${(await r.text()).slice(0, 200)}` };
-  const raw = String(((await r.json()) as any)?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  const P = MARKS_AI.provider, signal = AbortSignal.timeout((P?.timeout_s ?? 60) * 1000);
+  let reply: string;
+  if (P) {   // hosted: an OpenAI-compatible chat API. A reasoning model's thinking counts against max_tokens, hence the room.
+    const key = P.api_key_env ? process.env[P.api_key_env] : undefined;
+    if (P.api_key_env && !key) return { text: null, reason: `no key: set ${P.api_key_env} in the environment or in .env` };
+    const r = await fetch(`${P.base_url.replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) }, signal,
+      body: JSON.stringify({ model, messages, temperature: 0.8, max_tokens: 4000, ...(P.params || {}) }),
+    });
+    if (!r.ok) return { text: null, reason: `${new URL(P.base_url).host} ${r.status}: ${(await r.text()).slice(0, 200)}` };
+    reply = String(((await r.json()) as any)?.choices?.[0]?.message?.content ?? '');
+  } else {
+    const r = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, signal,
+      body: JSON.stringify({ model, messages, stream: false, think: false, keep_alive: '15m', options: { temperature: 0.8, num_predict: what === 'name' ? 100 : 200 } }),
+    });
+    if (!r.ok) return { text: null, reason: `Ollama ${r.status}: ${(await r.text()).slice(0, 200)}` };
+    reply = String(((await r.json()) as any)?.message?.content ?? '');
+  }
+  const raw = reply.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   // a name prompt may ask for several (one per line, best first): every line is an option, the first is the suggestion
-  // a small model sometimes wraps its list in markdown, kind tags or commentary: keep only short name-like lines
-  // (list markers, emphasis, a leading "name:", a short tag in brackets after the name, quotes; a line that still has a
-  // colon or runs past six words is commentary)
-  const clean = (l: string) => l.replace(/\*\*|__|`/g, '').replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').replace(/^(name|title)\s*:\s*/i, '').replace(/\s*[(\[][^()\[\]]{1,24}[)\]]\s*$/, '').replace(/^["'“*#\s]+|["'”*\s.]+$/g, '');
+  // a model sometimes wraps its list in markdown, kind tags or commentary: keep only short name-like lines
+  // (a bolded name with a gloss after it is the name; list markers, emphasis, a leading "name:", a gloss after a spaced
+  // dash, a short tag in brackets after the name, quotes; a line that still has a colon or runs past six words is commentary)
+  const clean = (l: string) => l.replace(/^\s*(?:\d+[.)]\s*|[-*•]\s*)?\*\*([^*]+)\*\*.*$/, '$1').replace(/\s+[—–]\s+.*$/, '').replace(/\*\*|__|`/g, '').replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').replace(/^(name|title)\s*:\s*/i, '').replace(/\s*[(\[][^()\[\]]{1,24}[)\]]\s*$/, '').replace(/^["'“*#\s]+|["'”*\s.]+$/g, '');
   const nameLike = (l: string) => l && !/[:;]/.test(l) && l.split(/\s+/).length <= 6;
   // shuffled: a model tends to list its options in the same order every time, so the first would always be the same sort
   const options = what === 'name' ? shuffle([...new Set(raw.split('\n').map(clean).filter(nameLike))].slice(0, 8)) : [];
-  // a note is the first paragraph, without markdown
-  const text = what === 'name' ? (options[0] ?? '') : (raw.split(/\n\s*\n/)[0] ?? '').replace(/\*\*|__/g, '').trim().slice(0, 800);
+  // a note is the first paragraph, without markdown; a bolded label in front of it ("**Label:**") is dropped — by its
+  // form, not its word, so a plain opening like "Week one: …" stays
+  const text = what === 'name' ? (options[0] ?? '') : (raw.split(/\n\s*\n/)[0] ?? '').replace(/^\s*\*\*[^*\n]{1,30}?(?::\*\*|\*\*\s*:)\s*/, '').replace(/\*\*|__/g, '').replace(/(^|[^\w*])\*([^*\n]+)\*(?![\w*])/g, '$1$2').trim().slice(0, 800);
   return text ? { text, ...(options.length > 1 ? { options } : {}), source: 'model' as const, model, ms: Date.now() - t0 } : { text: null, reason: 'the model returned nothing' };
 }
