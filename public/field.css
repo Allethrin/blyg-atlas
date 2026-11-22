@@ -332,6 +332,8 @@ body.ffull:not(.fbare) .ffab [data-fab="drift"] { display: none; }
 .fmcard button:hover:not(:disabled) { border-color: var(--mark); }
 .fmcard button:disabled { opacity: .45; cursor: default; }
 .fmcard button.fmdel { color: var(--mute); }
+.fmcard button.fmdel.armed { color: var(--bg); background: #a8432a; border-color: #a8432a; }   /* armed: the next click deletes */
+.fviewname { font: inherit; font-size: 12px; width: 11em; padding: 1px 6px; margin-right: 3px; border: 1px solid var(--mute); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .fmact { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
 .fmmsg { margin-left: 4px; }
 .fmlist { margin: 0 0 8px; }

@@ -402,7 +402,20 @@ function markOpen(id, x, y) {
       setTimeout(() => { if (MARK.hl === id && !el.matches(':hover')) { MARK.hl = null; MARK.refresh(); } }, 3000);
     };
     const del = () => act(async () => { await post('/mark/' + encodeURIComponent(id) + '/delete', {}); close(); await marksChanged(); });
-    $('[data-del]').onclick = () => { if (confirm(`Delete the mark "${markName(m)}"? Its notes go with it.`)) del(); };
+    // asked in the card, not with confirm(): a browser dialog takes Safari out of full screen, and the window it leaves
+    // behind can come back blank (Ben, Nov 21). The first click arms the button for a few seconds, the second deletes.
+    let armed = 0;
+    const ASK = 'click again; its notes go with it';
+    const disarm = () => { clearTimeout(armed); armed = 0; const b = $('[data-del]'); b.textContent = 'delete'; b.classList.remove('armed'); if ($msg.textContent === ASK) $msg.textContent = ''; };
+    $('[data-del]').onclick = () => {
+      const b = $('[data-del]');
+      if (!armed) {
+        b.textContent = 'delete — sure?'; b.classList.add('armed'); $msg.textContent = ASK;
+        armed = setTimeout(disarm, 4000);
+        return;
+      }
+      disarm(); del();   // (a failure shows in the message line, with the button back to plain delete)
+    };
     if (prop) {
       $('[data-keep]').onclick = () => act(async () => { await post('/mark/' + encodeURIComponent(id), { state: 'kept' }); await marksChanged(); await load(); });
       $('[data-discard]').onclick = del;
@@ -2547,11 +2560,20 @@ async function viewField(p) {
       if (!TS.lens) setLens(cur && cur.path ? 'c:' + cur.path : 'o');   // no focus picked yet: the region you're in, or the middle
     });
     panel.querySelector('a[data-tact="reset"]').onclick = ev => { ev.preventDefault(); stopDrift(); stopPlay(); Object.assign(TS, TDEF); syncPanel(); schedule(); };
+    // the name is typed into a field beside the button, not a prompt(): a browser dialog takes Safari out of full screen
+    // (see the mark card's delete). Enter keeps the view, Escape or leaving the field drops it.
     panel.querySelector('a[data-tact="save"]').onclick = ev => {
       ev.preventDefault();
-      const name = (prompt('name this view') || '').trim();
-      if (!name) return;
-      VIEWS.push({ name: name.slice(0, 40), hash: hashFor(cur ? cur.path : '') }); saveViews(); syncPanel();
+      const a = ev.currentTarget;
+      if (a.nextElementSibling && a.nextElementSibling.classList.contains('fviewname')) { a.nextElementSibling.focus(); return; }
+      const hash = hashFor(cur ? cur.path : '');   // the view as it is when asked, not after typing
+      const inp = document.createElement('input');
+      inp.className = 'fviewname'; inp.type = 'text'; inp.maxLength = 40; inp.placeholder = 'name this view ↵';
+      a.after(inp); inp.focus();
+      let done = false;
+      const end = keep => { if (done) return; done = true; const name = inp.value.trim(); inp.remove(); if (keep && name) { VIEWS.push({ name, hash }); saveViews(); syncPanel(); } };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
+      inp.addEventListener('blur', () => end(false));
     };
     // drift: each control bounces between its limits at its own slow speed, so the plane never retraces its path quickly
     let drift = 0, driftT = 0;
